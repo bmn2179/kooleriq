@@ -1,0 +1,104 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --bg-canvas: #0a1128;
+    --bg-surface: #101f42;
+    --bg-surface-elevated: #18274d;
+    --bg-surface-highest: #222941;
+    --text-primary: #dce1ff;
+    --text-secondary: #bac9cc;
+    --text-muted: #849396;
+    --accent-cyan: #00e5ff;
+    --accent-emerald: #10b981;
+    --accent-amber: #ff9f1c;
+    --accent-crimson: #ff5a5f;
+    --border-frost: rgba(255, 255, 255, 0.08);
+    --border-cyan: rgba(0, 229, 255, 0.25);
+  }
+
+  html {
+    font-family: "DM Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    color-scheme: dark;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  .font-mono-tabular {
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Custom Glacier Telemetry subtle surface helpers */
+.glacier-card {
+  background-color: #101f42;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glacier-glass {
+  background-color: rgba(16, 31, 66, 0.78);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 229, 255, 0.22);
+}
+
+.glacier-hud {
+  background-color: rgba(16, 31, 66, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 8px 32px rgba(0, 229, 255, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+/* Cooler glass shelf reflection */
+.cooler-shelf-ledge {
+  background: linear-gradient(180deg, rgba(195, 245, 255, 0.14) 0%, rgba(16, 31, 66, 0.9) 100%);
+  border-top: 1px solid rgba(195, 245, 255, 0.25);
+}
+
+/* Laser scan sweep animation */
+@keyframes scanSweep {
+  0% {
+    transform: translateY(0%);
+    opacity: 0.95;
+  }
+  50% {
+    transform: translateY(420%);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0%);
+    opacity: 0.95;
+  }
+}
+
+.animate-scan-sweep {
+  animation: scanSweep 2.2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-scan-sweep {
+    animation: none;
+  }
+}
+
+/* Clean custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0a1128;
+}
+::-webkit-scrollbar-thumb {
+  background: #222941;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #38466b;
+}
