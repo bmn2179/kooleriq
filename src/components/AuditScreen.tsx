@@ -3,7 +3,10 @@ import {
   AlertTriangle,
   Camera,
   CheckCircle2,
+  ClipboardList,
   Eye,
+  Images,
+  ScanBarcode,
   ScanLine,
   Upload,
   Video,
@@ -22,6 +25,10 @@ interface AuditScreenProps {
   audits: AuditRecord[];
   onRunAudit: (doorId: string) => void;
   onSyncDoorGaps: (doorId: string) => void;
+  onOpenScanner: () => void;
+  onOpenAuditLog: () => void;
+  onOpenImageLibrary: () => void;
+  onSaveAuditFrameToLibrary: (door: CoolerDoor, dataUrl: string) => void;
 }
 
 export const AuditScreen: React.FC<AuditScreenProps> = ({
@@ -33,6 +40,10 @@ export const AuditScreen: React.FC<AuditScreenProps> = ({
   audits,
   onRunAudit,
   onSyncDoorGaps,
+  onOpenScanner,
+  onOpenAuditLog,
+  onOpenImageLibrary,
+  onSaveAuditFrameToLibrary,
 }) => {
   const activeDoor = useMemo(
     () => doors.find((d) => d.id === selectedDoorId) ?? doors[0],
@@ -73,26 +84,72 @@ export const AuditScreen: React.FC<AuditScreenProps> = ({
   const startWebcam = async () => {
     setCameraError(null);
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      setCameraError('Live camera access is unavailable in this browser context. Using cooler telemetry view.');
+      setCameraError('Live camera access requires HTTPS or camera support in this browser. Using cooler telemetry view.');
       setCameraMode('simulated');
       return;
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
-        audio: false,
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false,
+        });
+      } catch (constraintErr) {
+        if (
+          constraintErr instanceof DOMException &&
+          (constraintErr.name === 'OverconstrainedError' || constraintErr.name === 'NotFoundError')
+        ) {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        } else {
+          throw constraintErr;
+        }
+      }
+
       streamRef.current = stream;
       setCameraMode('webcam');
       requestAnimationFrame(() => {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => undefined);
         }
       });
-    } catch {
-      setCameraError('Camera permission declined or unavailable. Showing live simulated Door HUD.');
+    } catch (err) {
+      const errName = err instanceof DOMException ? err.name : '';
+      if (errName === 'NotAllowedError' || errName === 'SecurityError') {
+        setCameraError(
+          'Camera permission blocked. Allow Camera access in your browser site settings and click Live Camera again.'
+        );
+      } else if (errName === 'NotFoundError') {
+        setCameraError('No camera detected on this device. Showing simulated cooler Door HUD.');
+      } else {
+        setCameraError('Camera unavailable or busy in another app. Showing live simulated Door HUD.');
+      }
       setCameraMode('simulated');
     }
+  };
+
+  const captureSnapshotDataUrl = (): string | null => {
+    try {
+      const canvas = document.createElement('canvas');
+      if (cameraMode === 'webcam' && videoRef.current && videoRef.current.videoWidth > 0) {
+        const vw = videoRef.current.videoWidth;
+        const vh = videoRef.current.videoHeight;
+        const scale = Math.min(1, 880 / Math.max(vw, vh));
+        canvas.width = Math.round(vw * scale);
+        canvas.height = Math.round(vh * scale);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+        ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+        return canvas.toDataURL('image/jpeg', 0.84);
+      }
+      if (cameraMode === 'photo' && uploadedImageUrl) {
+        return uploadedImageUrl;
+      }
+    } catch {
+      return null;
+    }
+    return null;
   };
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -102,26 +159,34 @@ export const AuditScreen: React.FC<AuditScreenProps> = ({
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
-    const url = URL.createObjectURL(file);
-    setUploadedImageUrl(url);
-    setCameraMode('photo');
-    setCameraError(null);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const url = String(reader.result);
+      setUploadedImageUrl(url);
+      setCameraMode('photo');
+      setCameraError(null);
+      onSaveAuditFrameToLibrary(activeDoor, url);
+    };
+    reader.readAsDataURL(file);
   };
 
   const triggerScan = () => {
     if (isScanning) return;
     setIsScanning(true);
     setScanCompleteBanner(null);
+    const snapshot = captureSnapshotDataUrl();
     setTimeout(() => {
       setIsScanning(false);
       onRunAudit(activeDoor.id);
+      if (snapshot && cameraMode === 'webcam') {
+        onSaveAuditFrameToLibrary(activeDoor, snapshot);
+      }
       setScanCompleteBanner(
         `Verified Door ${activeDoor.number}: ${metrics.compliancePct.toFixed(1)}% compliant · ${metrics.oosCount} OOS gaps logged.`
       );
     }, 1400);
   };
 
-  // Top 3 shelves previewed inside the camera optical frame for crisp readability
   const previewShelves = activeDoor.shelves.slice(0, 3);
   const discrepancies = activeDoor.shelves
     .flat()
@@ -139,8 +204,8 @@ export const AuditScreen: React.FC<AuditScreenProps> = ({
               onClick={() => onSelectDoor(door.id)}
               className={`min-h-[44px] px-3.5 py-2 rounded-lg border text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
                 door.id === activeDoor.id
-                  ? 'bg-[#18274D] border-[#00E5FF] text-[#DCE1FF]'
-                  : 'bg-[#101F42] border-white/10 text-[#BAC9CC] hover:text-white'
+                  ? 'bg-[var(--kq-surface-elevated)] border-[var(--kq-accent)] text-[var(--kq-text)]'
+                  : 'bg-[var(--kq-surface)] border-[var(--kq-border-strong)] text-[var(--kq-text-secondary)] hover:text-[var(--kq-text)]'
               }`}
             >
               Door {door.number} · {formatTemp(door.tempF, settings.tempUnit)}
@@ -153,16 +218,16 @@ export const AuditScreen: React.FC<AuditScreenProps> = ({
             <button
               type="button"
               onClick={stopWebcam}
-              className="min-h-[44px] px-3.5 py-2 rounded bg-[#101F42] border border-white/15 text-[#DCE1FF] text-xs font-medium hover:border-[#00E5FF]/50 transition-colors flex items-center gap-2 whitespace-nowrap"
+              className="min-h-[44px] px-3.5 py-2 rounded-lg bg-[var(--kq-surface)] border border-[var(--kq-border-strong)] text-[var(--kq-text)] text-xs font-medium hover:border-[var(--kq-accent)] transition-colors flex items-center gap-2 whitespace-nowrap"
             >
-              <VideoOff className="w-4 h-4 text-[#FF9F1C]" />
+              <VideoOff className="w-4 h-4 text-[var(--kq-amber)]" />
               Stop Camera
             </button>
           ) : (
             <button
               type="button"
               onClick={startWebcam}
-              className="min-h-[44px] px-3.5 py-2 rounded bg-[#00E5FF]/10 border border-[#00E5FF]/60 text-[#00E5FF] text-xs font-semibold hover:bg-[#00E5FF]/20 transition-colors flex items-center gap-2 whitespace-nowrap"
+              className="min-h-[44px] px-3.5 py-2 rounded-lg bg-[var(--kq-accent-soft)] border border-[var(--kq-accent-border)] text-[var(--kq-accent)] text-xs font-semibold hover:opacity-90 transition-opacity flex items-center gap-2 whitespace-nowrap"
             >
               <Video className="w-4 h-4" />
               Live Camera
@@ -179,17 +244,35 @@ export const AuditScreen: React.FC<AuditScreenProps> = ({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="min-h-[44px] px-3.5 py-2 rounded bg-[#101F42] border border-white/15 text-[#DCE1FF] text-xs font-medium hover:border-[#00E5FF]/50 transition-colors flex items-center gap-2 whitespace-nowrap"
+            className="min-h-[44px] px-3.5 py-2 rounded-lg bg-[var(--kq-surface)] border border-[var(--kq-border-strong)] text-[var(--kq-text)] text-xs font-medium hover:border-[var(--kq-accent)] transition-colors flex items-center gap-2 whitespace-nowrap"
           >
-            <Upload className="w-4 h-4 text-[#BAC9CC]" />
+            <Upload className="w-4 h-4 text-[var(--kq-text-secondary)]" />
             Upload Photo
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenScanner}
+            className="min-h-[44px] px-3.5 py-2 rounded-lg bg-[var(--kq-surface)] border border-[var(--kq-accent-border)] text-[var(--kq-accent)] text-xs font-semibold hover:bg-[var(--kq-accent-soft)] transition-colors flex items-center gap-2 whitespace-nowrap"
+          >
+            <ScanBarcode className="w-4 h-4" />
+            Barcode / QR
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenImageLibrary}
+            className="min-h-[44px] px-3.5 py-2 rounded-lg bg-[var(--kq-surface)] border border-[var(--kq-border-strong)] text-[var(--kq-text)] text-xs font-medium hover:border-[var(--kq-accent)] transition-colors flex items-center gap-2 whitespace-nowrap"
+          >
+            <Images className="w-4 h-4 text-[var(--kq-accent)]" />
+            Image Library
           </button>
 
           {cameraMode !== 'simulated' && (
             <button
               type="button"
               onClick={stopWebcam}
-              className="min-h-[44px] px-3 py-2 rounded bg-[#101F42] border border-white/15 text-[#BAC9CC] text-xs font-medium hover:text-white"
+              className="min-h-[44px] px-3 py-2 rounded-lg bg-[var(--kq-surface)] border border-[var(--kq-border-strong)] text-[var(--kq-text-secondary)] text-xs font-medium hover:text-[var(--kq-text)]"
             >
               Sim View
             </button>
@@ -198,7 +281,7 @@ export const AuditScreen: React.FC<AuditScreenProps> = ({
       </div>
 
       {cameraError && (
-        <div className="rounded-lg bg-[#FF9F1C]/10 border border-[#FF9F1C]/40 px-4 py-2.5 text-xs text-[#FFCF87]">
+        <div className="rounded-lg bg-[var(--kq-amber-soft)] border border-[var(--kq-amber)] px-4 py-2.5 text-xs text-[var(--kq-amber-text)]">
           {cameraError}
         </div>
       )}
@@ -208,11 +291,13 @@ export const AuditScreen: React.FC<AuditScreenProps> = ({
         <div className="lg:col-span-8 glacier-card rounded-xl p-4 space-y-4">
           {/* HUD Layer Toggles */}
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-xs text-[#BAC9CC]">
-              <Eye className="w-4 h-4 text-[#00E5FF]" />
-              <span className="font-semibold text-[#DCE1FF]">Optical Shelf Scanner</span>
+            <div className="flex items-center gap-2 text-xs text-[var(--kq-text-secondary)]">
+              <Eye className="w-4 h-4 text-[var(--kq-accent)]" />
+              <span className="font-semibold text-[var(--kq-text)]">Optical Shelf Scanner</span>
               <span aria-hidden="true">·</span>
-              <span className="font-mono-tabular text-[#00E5FF]">Door {activeDoor.number}</span>
+              <span className="font-mono-tabular text-[var(--kq-accent)] font-medium">
+                Door {activeDoor.number}
+              </span>
             </div>
 
             <div className="flex items-center gap-1.5 flex-wrap">
@@ -221,8 +306,8 @@ export const AuditScreen: React.FC<AuditScreenProps> = ({
                 onClick={() => setShowBoundingBoxes((v) => !v)}
                 className={`min-h-[36px] px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
                   showBoundingBoxes
-                    ? 'bg-[#00E5FF]/15 border-[#00E5FF]/60 text-[#00E5FF]'
-                    : 'bg-[#0A1128] border-white/10 text-[#849396]'
+                    ? 'bg-[var(--kq-accent-soft)] border-[var(--kq-accent-border)] text-[var(--kq-accent)]'
+                    : 'bg-[var(--kq-surface-muted)] border-[var(--kq-border)] text-[var(--kq-text-muted)]'
                 }`}
               >
                 SKU Boxes
@@ -232,8 +317,8 @@ export const AuditScreen: React.FC<AuditScreenProps> = ({
                 onClick={() => setShowOosOverlay((v) => !v)}
                 className={`min-h-[36px] px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
                   showOosOverlay
-                    ? 'bg-[#FF5A5F]/15 border-[#FF5A5F]/60 text-[#FFB4AB]'
-                    : 'bg-[#0A1128] border-white/10 text-[#849396]'
+                    ? 'bg-[var(--kq-crimson-soft)] border-[var(--kq-crimson)] text-[var(--kq-crimson-text)]'
+                    : 'bg-[var(--kq-surface-muted)] border-[var(--kq-border)] text-[var(--kq-text-muted)]'
                 }`}
               >
                 OOS Gaps
@@ -243,8 +328,8 @@ export const AuditScreen: React.FC<AuditScreenProps> = ({
                 onClick={() => setShowDepthGrid((v) => !v)}
                 className={`min-h-[36px] px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
                   showDepthGrid
-                    ? 'bg-[#18274D] border-white/25 text-[#DCE1FF]'
-                    : 'bg-[#0A1128] border-white/10 text-[#849396]'
+                    ? 'bg-[var(--kq-surface-elevated)] border-[var(--kq-border-strong)] text-[var(--kq-text)]'
+                    : 'bg-[var(--kq-surface-muted)] border-[var(--kq-border)] text-[var(--kq-text-muted)]'
                 }`}
               >
                 Grid HUD
@@ -252,9 +337,8 @@ export const AuditScreen: React.FC<AuditScreenProps> = ({
             </div>
           </div>
 
-          {/* Camera Optical Viewport */}
-          <div className="relative rounded-xl overflow-hidden bg-[#060D24] border border-[#00E5FF]/30 min-h-[380px] sm:min-h-[430px] flex flex-col justify-between p-4">
-            {/* Background Media Layer */}
+          {/* Camera Optical Viewport (dark optical instrument screen) */}
+          <div className="relative rounded-xl overflow-hidden bg-[var(--kq-cabinet)] border border-slate-700/80 min-h-[380px] sm:min-h-[430px] flex flex-col justify-between p-4">
             {cameraMode === 'webcam' && (
               <video
                 ref={videoRef}
@@ -273,59 +357,74 @@ export const AuditScreen: React.FC<AuditScreenProps> = ({
               />
             )}
 
-            {/* Simulated Cooler LED & Frost Grid Background */}
-            {cameraMode === 'simulated' && (
+            {cameraMode === 'simulated' && activeDoor.photoUrl && (
+              <img
+                src={activeDoor.photoUrl}
+                alt={`${activeDoor.label} reference image`}
+                referrerPolicy="no-referrer"
+                className="absolute inset-0 w-full h-full object-cover opacity-55"
+              />
+            )}
+
+            {cameraMode === 'simulated' && !activeDoor.photoUrl && (
               <div
                 className="absolute inset-0 pointer-events-none"
                 style={{
                   background:
-                    'radial-gradient(circle at 50% 0%, rgba(0, 229, 255, 0.14), rgba(6, 13, 36, 0.96) 70%)',
+                    'radial-gradient(circle at 50% 0%, rgba(56, 189, 248, 0.16), rgba(8, 12, 20, 0.96) 72%)',
                 }}
                 aria-hidden="true"
               />
             )}
 
-            {/* Optical Rule-of-Thirds HUD Grid */}
             {showDepthGrid && (
               <div
                 className="absolute inset-0 pointer-events-none grid grid-cols-3 grid-rows-3"
                 aria-hidden="true"
               >
                 {Array.from({ length: 9 }).map((_, idx) => (
-                  <div key={idx} className="border border-white/[0.04]" />
+                  <div key={idx} className="border border-white/[0.05]" />
                 ))}
               </div>
             )}
 
-            {/* Animated Laser Scan Sweep */}
             {isScanning && (
               <div
                 className="absolute inset-x-0 top-0 h-20 pointer-events-none z-20 animate-scan-sweep"
                 style={{
                   background:
-                    'linear-gradient(180deg, rgba(0, 229, 255, 0) 0%, rgba(0, 229, 255, 0.35) 92%, #00E5FF 100%)',
-                  borderBottom: '2px solid #00E5FF',
+                    'linear-gradient(180deg, rgba(56, 189, 248, 0) 0%, rgba(56, 189, 248, 0.35) 92%, #38BDF8 100%)',
+                  borderBottom: '2px solid #38BDF8',
                 }}
                 aria-hidden="true"
               />
             )}
 
-            {/* Corner Viewfinder Brackets */}
-            <div className="relative z-10 flex items-center justify-between text-[11px] font-mono-tabular text-[#00E5FF]">
-              <span className="px-2 py-1 rounded bg-[#0A1128]/80 border border-[#00E5FF]/30">
+            <div className="relative z-10 flex items-center justify-between text-[11px] font-mono-tabular text-sky-300">
+              <span className="px-2 py-1 rounded bg-slate-950/80 border border-sky-400/35">
                 DOOR {activeDoor.number} · {activeDoor.category}
               </span>
-              <span className="px-2 py-1 rounded bg-[#0A1128]/80 border border-white/10 text-[#DCE1FF]">
+              <span className="px-2 py-1 rounded bg-slate-950/80 border border-white/15 text-slate-100">
                 {formatTemp(activeDoor.tempF, settings.tempUnit)} · 97.8% CONF
               </span>
             </div>
 
-            {/* Detection Overlay Rows */}
             <div className="relative z-10 my-4 space-y-3">
               {previewShelves.map((shelf, sIdx) => (
-                <div key={sIdx} className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                <div
+                  key={sIdx}
+                  className={`grid gap-2 ${
+                    shelf.length <= 4
+                      ? 'grid-cols-2 sm:grid-cols-4'
+                      : shelf.length === 5
+                        ? 'grid-cols-2 sm:grid-cols-5'
+                        : shelf.length >= 7
+                          ? 'grid-cols-4 sm:grid-cols-8'
+                          : 'grid-cols-3 sm:grid-cols-6'
+                  }`}
+                >
                   {shelf.map((slot) => {
-                    const sku = skuCatalog[slot.skuId];
+                    const sku = skuCatalog[slot.skuId] ?? Object.values(skuCatalog)[0];
                     const isOos = slot.currentDepth === 0;
                     const isViolation = slot.skuId !== slot.plannedSkuId;
 
@@ -334,25 +433,24 @@ export const AuditScreen: React.FC<AuditScreenProps> = ({
                         key={slot.id}
                         className={`relative rounded p-2 flex flex-col items-center justify-center min-h-[92px] transition-all ${
                           cameraMode === 'simulated'
-                            ? 'bg-[#0A1128]/70'
-                            : 'bg-[#0A1128]/40 backdrop-blur-[2px]'
+                            ? 'bg-slate-950/70'
+                            : 'bg-slate-950/45 backdrop-blur-[2px]'
                         } ${
                           isOos && showOosOverlay
-                            ? 'border border-dashed border-[#FF5A5F]'
+                            ? 'border border-dashed border-rose-400'
                             : showBoundingBoxes
                               ? isViolation
-                                ? 'border border-[#FF9F1C]'
-                                : 'border border-[#00E5FF]/55'
+                                ? 'border border-amber-400'
+                                : 'border border-sky-400/60'
                               : 'border border-transparent'
                         }`}
                       >
-                        {/* Corner Brackets for AI Detection */}
                         {showBoundingBoxes && !isOos && (
                           <>
-                            <span className="absolute top-0 left-0 w-2 h-2 border-t-2 border-l-2 border-[#00E5FF]" />
-                            <span className="absolute top-0 right-0 w-2 h-2 border-t-2 border-r-2 border-[#00E5FF]" />
-                            <span className="absolute bottom-0 left-0 w-2 h-2 border-b-2 border-l-2 border-[#00E5FF]" />
-                            <span className="absolute bottom-0 right-0 w-2 h-2 border-b-2 border-r-2 border-[#00E5FF]" />
+                            <span className="absolute top-0 left-0 w-2 h-2 border-t-2 border-l-2 border-sky-400" />
+                            <span className="absolute top-0 right-0 w-2 h-2 border-t-2 border-r-2 border-sky-400" />
+                            <span className="absolute bottom-0 left-0 w-2 h-2 border-b-2 border-l-2 border-sky-400" />
+                            <span className="absolute bottom-0 right-0 w-2 h-2 border-b-2 border-r-2 border-sky-400" />
                           </>
                         )}
 
@@ -361,12 +459,12 @@ export const AuditScreen: React.FC<AuditScreenProps> = ({
                         )}
 
                         {isOos && showOosOverlay ? (
-                          <span className="text-[10px] font-mono-tabular font-bold text-[#FF5A5F] text-center">
+                          <span className="text-[10px] font-mono-tabular font-bold text-rose-400 text-center">
                             GAP · {slot.coord}
                           </span>
                         ) : (
                           showBoundingBoxes && (
-                            <span className="mt-1 text-[10px] font-mono-tabular text-[#C3F5FF] truncate max-w-full">
+                            <span className="mt-1 text-[10px] font-mono-tabular text-sky-100 truncate max-w-full">
                               {sku.skuCode} · {slot.currentDepth}/{slot.maxDepth}
                             </span>
                           )
@@ -378,9 +476,8 @@ export const AuditScreen: React.FC<AuditScreenProps> = ({
               ))}
             </div>
 
-            {/* Camera Capture Footer */}
             <div className="relative z-10 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2 border-t border-white/10">
-              <div className="text-xs text-[#BAC9CC] font-mono-tabular">
+              <div className="text-xs text-slate-300 font-mono-tabular">
                 {metrics.totalFacings - metrics.oosCount}/{metrics.totalFacings} facings active ·{' '}
                 {metrics.oosCount} empty slots
               </div>
@@ -388,7 +485,7 @@ export const AuditScreen: React.FC<AuditScreenProps> = ({
                 type="button"
                 onClick={triggerScan}
                 disabled={isScanning}
-                className="min-h-[44px] px-5 py-2.5 rounded-lg bg-[#00E5FF] text-[#0A1128] font-semibold text-sm hover:bg-[#33ECFF] disabled:opacity-60 transition-colors flex items-center justify-center gap-2 whitespace-nowrap"
+                className="min-h-[44px] px-5 py-2.5 rounded-lg bg-[var(--kq-accent)] text-[var(--kq-accent-fg)] font-semibold text-sm hover:bg-[var(--kq-accent-hover)] disabled:opacity-60 transition-colors flex items-center justify-center gap-2 whitespace-nowrap"
               >
                 {isScanning ? (
                   <>
@@ -406,9 +503,9 @@ export const AuditScreen: React.FC<AuditScreenProps> = ({
           </div>
 
           {scanCompleteBanner && (
-            <div className="rounded-lg bg-[#10B981]/15 border border-[#10B981]/50 px-4 py-3 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-xs font-medium text-[#A8FFD2]">
-                <CheckCircle2 className="w-4 h-4 text-[#10B981] shrink-0" />
+            <div className="rounded-lg bg-[var(--kq-emerald-soft)] border border-[var(--kq-emerald)] px-4 py-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-xs font-medium text-[var(--kq-emerald-text)]">
+                <CheckCircle2 className="w-4 h-4 text-[var(--kq-emerald)] shrink-0" />
                 <span>{scanCompleteBanner}</span>
               </div>
             </div>
@@ -419,16 +516,16 @@ export const AuditScreen: React.FC<AuditScreenProps> = ({
         <div className="lg:col-span-4 space-y-5">
           <div className="glacier-card rounded-xl p-4">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-[#DCE1FF]">
+              <h3 className="text-sm font-semibold text-[var(--kq-text)]">
                 Detected Shelf Discrepancies
               </h3>
-              <span className="text-xs font-mono-tabular text-[#FF9F1C]">
+              <span className="text-xs font-mono-tabular text-[var(--kq-amber)] font-semibold">
                 {discrepancies.length} flagged
               </span>
             </div>
 
             {discrepancies.length === 0 ? (
-              <div className="rounded-lg bg-[#10B981]/10 border border-[#10B981]/30 p-4 text-xs text-[#A8FFD2]">
+              <div className="rounded-lg bg-[var(--kq-emerald-soft)] border border-[var(--kq-emerald)] p-4 text-xs text-[var(--kq-emerald-text)]">
                 All facings on Door {activeDoor.number} match the active planogram with optimal depth.
               </div>
             ) : (
@@ -440,24 +537,37 @@ export const AuditScreen: React.FC<AuditScreenProps> = ({
                   return (
                     <div
                       key={slot.id}
-                      className="rounded-lg bg-[#0A1128] border border-white/10 p-3 flex items-center justify-between gap-2"
+                      className="rounded-lg bg-[var(--kq-surface-muted)] border border-[var(--kq-border)] p-3 flex items-center justify-between gap-2"
                     >
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5 text-xs font-mono-tabular">
                           <AlertTriangle
                             className={`w-3.5 h-3.5 shrink-0 ${
-                              isOos ? 'text-[#FF5A5F]' : 'text-[#FF9F1C]'
+                              isOos ? 'text-[var(--kq-crimson)]' : 'text-[var(--kq-amber)]'
                             }`}
                           />
-                          <span className="text-[#DCE1FF] font-semibold">{slot.coord}</span>
+                          <span className="text-[var(--kq-text)] font-semibold">{slot.coord}</span>
                           <span aria-hidden="true">·</span>
-                          <span className={isOos ? 'text-[#FF5A5F]' : 'text-[#FF9F1C]'}>
+                          <span
+                            className={
+                              isOos
+                                ? 'text-[var(--kq-crimson)] font-semibold'
+                                : 'text-[var(--kq-amber)] font-semibold'
+                            }
+                          >
                             {isOos ? 'OUT OF STOCK' : isViolation ? 'MISPLACED' : 'LOW STOCK'}
                           </span>
                         </div>
-                        <p className="text-xs text-[#BAC9CC] truncate mt-1">{sku.name}</p>
+                        <p className="text-xs text-[var(--kq-text-secondary)] truncate mt-1">
+                          {sku.name}
+                        </p>
+                        {sku.upc && (
+                          <p className="text-[10px] font-mono-tabular text-[var(--kq-text-muted)] truncate mt-0.5">
+                            UPC {sku.upc}
+                          </p>
+                        )}
                       </div>
-                      <span className="text-xs font-mono-tabular text-[#849396] shrink-0">
+                      <span className="text-xs font-mono-tabular text-[var(--kq-text-muted)] shrink-0">
                         {slot.currentDepth}/{slot.maxDepth}
                       </span>
                     </div>
@@ -470,7 +580,7 @@ export const AuditScreen: React.FC<AuditScreenProps> = ({
               <button
                 type="button"
                 onClick={() => onSyncDoorGaps(activeDoor.id)}
-                className="mt-3 w-full min-h-[44px] px-4 py-2 rounded bg-[#00E5FF]/10 border border-[#00E5FF] text-[#00E5FF] text-xs font-semibold hover:bg-[#00E5FF]/20 transition-colors"
+                className="mt-3 w-full min-h-[44px] px-4 py-2 rounded-lg bg-[var(--kq-accent-soft)] border border-[var(--kq-accent-border)] text-[var(--kq-accent)] text-xs font-semibold hover:opacity-90 transition-opacity"
               >
                 Restock &amp; Resolve All Door {activeDoor.number} Gaps
               </button>
@@ -479,23 +589,39 @@ export const AuditScreen: React.FC<AuditScreenProps> = ({
 
           {/* Recent Audit Log */}
           <div className="glacier-card rounded-xl p-4">
-            <h3 className="text-sm font-semibold text-[#DCE1FF] mb-3">Recent Cooler Audits</h3>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h3 className="text-sm font-semibold text-[var(--kq-text)]">
+                Recent Cooler Audits
+              </h3>
+              <button
+                type="button"
+                onClick={onOpenAuditLog}
+                className="text-xs font-semibold text-[var(--kq-accent)] hover:underline inline-flex items-center gap-1 whitespace-nowrap"
+              >
+                <ClipboardList className="w-3.5 h-3.5" />
+                Full Audit Log
+              </button>
+            </div>
             <div className="space-y-2.5">
               {audits.slice(0, 4).map((audit) => (
                 <div
                   key={audit.id}
-                  className="border-b border-white/10 last:border-b-0 pb-2.5 last:pb-0"
+                  className="border-b border-[var(--kq-border)] last:border-b-0 pb-2.5 last:pb-0"
                 >
                   <div className="flex items-center justify-between gap-2 text-xs">
-                    <span className="font-semibold text-[#DCE1FF] truncate">{audit.doorLabel}</span>
-                    <span className="font-mono-tabular text-[#10B981] shrink-0">
+                    <span className="font-semibold text-[var(--kq-text)] truncate">
+                      {audit.doorLabel}
+                    </span>
+                    <span className="font-mono-tabular text-[var(--kq-emerald)] font-semibold shrink-0">
                       {audit.compliancePct.toFixed(1)}%
                     </span>
                   </div>
-                  <div className="text-[11px] text-[#849396] font-mono-tabular mt-0.5">
+                  <div className="text-[11px] text-[var(--kq-text-muted)] font-mono-tabular mt-0.5">
                     {audit.timestamp} · {audit.oosCount} OOS · {audit.aiConfidence}% conf
                   </div>
-                  <p className="text-xs text-[#BAC9CC] mt-1 leading-snug">{audit.summary}</p>
+                  <p className="text-xs text-[var(--kq-text-secondary)] mt-1 leading-snug">
+                    {audit.summary}
+                  </p>
                 </div>
               ))}
             </div>

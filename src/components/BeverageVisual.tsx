@@ -12,6 +12,12 @@ export const BeverageVisual: React.FC<BeverageVisualProps> = ({
   size = 'md',
   dimmed = false,
 }) => {
+  const [imgError, setImgError] = React.useState(false);
+
+  React.useEffect(() => {
+    setImgError(false);
+  }, [sku.imageUrl]);
+
   const dims =
     size === 'sm'
       ? { w: 22, h: 38 }
@@ -20,6 +26,19 @@ export const BeverageVisual: React.FC<BeverageVisualProps> = ({
         : { w: 30, h: 54 };
 
   const opacityClass = dimmed ? 'opacity-30 grayscale' : 'opacity-100';
+
+  if (sku.imageUrl && !imgError) {
+    return (
+      <img
+        src={sku.imageUrl}
+        alt={sku.name}
+        referrerPolicy="no-referrer"
+        onError={() => setImgError(true)}
+        style={{ width: dims.w + 8, height: dims.h }}
+        className={`rounded object-cover shrink-0 border border-white/15 transition-opacity duration-150 ${opacityClass}`}
+      />
+    );
+  }
 
   if (sku.containerType === 'bottle' || sku.containerType === 'glass-bottle') {
     const isGlass = sku.containerType === 'glass-bottle';

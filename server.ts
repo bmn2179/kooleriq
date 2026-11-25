@@ -3,7 +3,7 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 import {
   appendChatMessagesForUser,
   clearChatHistoryForUser,
@@ -25,7 +25,11 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '8mb' }));
+app.use((_req, res, next) => {
+  res.setHeader('Permissions-Policy', 'camera=*');
+  next();
+});
 
 function getGeminiClient() {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -42,17 +46,22 @@ function getGeminiClient() {
   });
 }
 
-function extractGroundingSources(response: unknown): Array<{ title: string; uri: string }> {
+function extractGroundingData(response: unknown): {
+  sources: Array<{ title: string; uri: string }>;
+  searchQueries: string[];
+} {
   const resp = response as {
     candidates?: Array<{
       groundingMetadata?: {
+        webSearchQueries?: string[];
         groundingChunks?: Array<{
           web?: { uri?: string; title?: string };
         }>;
       };
     }>;
   };
-  const chunks = resp?.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
+  const gm = resp?.candidates?.[0]?.groundingMetadata;
+  const chunks = gm?.groundingChunks ?? [];
   const seen = new Set<string>();
   const sources: Array<{ title: string; uri: string }> = [];
   for (const chunk of chunks) {
@@ -63,7 +72,10 @@ function extractGroundingSources(response: unknown): Array<{ title: string; uri:
       sources.push({ title: title ?? uri, uri });
     }
   }
-  return sources;
+  const searchQueries = Array.isArray(gm?.webSearchQueries)
+    ? gm.webSearchQueries.filter((q): q is string => typeof q === 'string' && q.trim().length > 0)
+    : [];
+  return { sources, searchQueries };
 }
 
 // Health check
@@ -104,8 +116,16 @@ app.get('/api/workspace', requireAuth, async (req: AuthRequest, res) => {
 // Save authenticated user's cooler workspace state to PostgreSQL
 app.put('/api/workspace', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const { storeName, storeCode, doorsJson, catalogJson, insightsJson, auditsJson, settingsJson } =
-      req.body ?? {};
+    const {
+      storeName,
+      storeCode,
+      doorsJson,
+      catalogJson,
+      insightsJson,
+      auditsJson,
+      settingsJson,
+      storesJson,
+    } = req.body ?? {};
     if (
       typeof storeName !== 'string' ||
       typeof storeCode !== 'string' ||
@@ -131,6 +151,7 @@ app.put('/api/workspace', requireAuth, async (req: AuthRequest, res) => {
       insightsJson,
       auditsJson,
       settingsJson,
+      storesJson: storesJson ?? null,
     });
 
     res.json({ workspace: saved });
@@ -249,7 +270,9 @@ app.post('/api/ai/chat', optionalAuth, async (req: AuthRequest, res) => {
     const response = await chat.sendMessage({ message: trimmedMessage });
     const replyText =
       response.text?.trim() || 'Unable to generate a response for that query. Please try again.';
-    const sources = enableSearch ? extractGroundingSources(response) : [];
+    const { sources, searchQueries } = enableSearch
+      ? extractGroundingData(response)
+      : { sources: [], searchQueries: [] };
 
     // Persist turn to Cloud SQL if user is signed in
     if (req.user) {
@@ -281,6 +304,7 @@ app.post('/api/ai/chat', optionalAuth, async (req: AuthRequest, res) => {
       reply: replyText,
       modelUsed: selectedModel,
       sources,
+      searchQueries,
     });
   } catch (error) {
     console.error('Gemini chat error:', error);
@@ -319,16 +343,199 @@ app.post('/api/ai/market-search', optionalAuth, async (req: AuthRequest, res) =>
     });
 
     const summary = response.text?.trim() || 'No search-grounded results returned.';
-    const sources = extractGroundingSources(response);
+    const { sources, searchQueries } = extractGroundingData(response);
 
     res.json({
       summary,
       sources,
+      searchQueries,
       modelUsed: 'gemini-4-hydrogen',
     });
   } catch (error) {
     console.error('Gemini search grounding error:', error);
     const msg = error instanceof Error ? error.message : 'Search grounding request failed.';
+    res.status(502).json({ error: msg });
+  }
+});
+
+// Structured Storewide Planogram & Revenue Optimization via Gemini
+app.post('/api/ai/planogram-analyze', optionalAuth, async (req: AuthRequest, res) => {
+  const ai = getGeminiClient();
+  if (!ai) {
+    return res.status(503).json({
+      error: 'Gemini API key is not configured on the server. Set GEMINI_API_KEY in Settings > Secrets.',
+    });
+  }
+
+  try {
+    const { storeName, layoutTemplate, doorsSummary, carriedCatalogSummary, goalMode } = req.body ?? {};
+    if (typeof doorsSummary !== 'string' || !doorsSummary.trim()) {
+      return res.status(400).json({ error: 'Live cooler door summary is required.' });
+    }
+
+    const goalDirective =
+      goalMode === 'fix-oos'
+        ? 'Prioritize eliminating out-of-stock and critically low facings using high-velocity replacement SKUs already in walk-in stock.'
+        : goalMode === 'cold-chain-balance'
+          ? 'Prioritize category zoning by door temperature band and thermal door-open efficiency.'
+          : 'Prioritize weekly gross dollar margin lift and eye-level SKU velocity swaps.';
+
+    const prompt = [
+      `Analyze cooler planogram telemetry for store "${String(storeName || 'Active Store').slice(0, 120)}" (${String(layoutTemplate || '').slice(0, 120)}).`,
+      `Optimization Goal: ${goalDirective}`,
+      `Active Cooler Doors & Slots:\n${doorsSummary.slice(0, 5000)}`,
+      `Available Carried Beverage Catalog (skuId | name | price | marginPct | velocity | backroomQty):\n${String(carriedCatalogSummary || '').slice(0, 5000)}`,
+      'Return 3 to 5 concrete, high-impact shelf slot actions using ONLY valid doorId, slotCoord, and skuId values present in the input above.',
+    ].join('\n\n');
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-4-hydrogen',
+      contents: prompt,
+      config: {
+        systemInstruction:
+          'You are the KoolerIQ AI Planogram Engine for convenience store beverage coolers. Output valid JSON strictly adhering to the response schema using exact IDs provided in the prompt.',
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            executiveSummary: {
+              type: Type.STRING,
+              description: '2-sentence operational summary of the recommended cooler changes.',
+            },
+            estimatedWeeklyGain: {
+              type: Type.NUMBER,
+              description: 'Total estimated weekly retail dollar gain across recommended actions.',
+            },
+            actions: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  doorId: { type: Type.STRING },
+                  doorNumber: { type: Type.STRING },
+                  slotCoord: { type: Type.STRING },
+                  actionType: { type: Type.STRING },
+                  currentSkuId: { type: Type.STRING },
+                  recommendedSkuId: { type: Type.STRING },
+                  recommendedSkuName: { type: Type.STRING },
+                  weeklyDollarGain: { type: Type.NUMBER },
+                  confidence: { type: Type.NUMBER },
+                  rationale: { type: Type.STRING },
+                },
+                required: [
+                  'doorId',
+                  'doorNumber',
+                  'slotCoord',
+                  'actionType',
+                  'recommendedSkuId',
+                  'recommendedSkuName',
+                  'weeklyDollarGain',
+                  'confidence',
+                  'rationale',
+                ],
+              },
+            },
+          },
+          required: ['executiveSummary', 'estimatedWeeklyGain', 'actions'],
+        },
+      },
+    });
+
+    const rawText = (response.text ?? '{}').trim();
+    const parsed = JSON.parse(rawText);
+
+    res.json({
+      plan: parsed,
+      modelUsed: 'gemini-4-hydrogen',
+    });
+  } catch (error) {
+    console.error('Gemini planogram analyze error:', error);
+    const msg = error instanceof Error ? error.message : 'AI planogram analysis failed.';
+    res.status(502).json({ error: msg });
+  }
+});
+
+// Multimodal Cooler Shelf Photo Inspection via Gemini
+app.post('/api/ai/vision-audit', optionalAuth, async (req: AuthRequest, res) => {
+  const ai = getGeminiClient();
+  if (!ai) {
+    return res.status(503).json({
+      error: 'Gemini API key is not configured on the server. Set GEMINI_API_KEY in Settings > Secrets.',
+    });
+  }
+
+  try {
+    const { imageBase64, mimeType, doorLabel, doorGridSummary } = req.body ?? {};
+    if (typeof imageBase64 !== 'string' || !imageBase64.trim()) {
+      return res.status(400).json({ error: 'Cooler shelf image payload is required.' });
+    }
+
+    const cleanedBase64 = imageBase64.replace(/^data:[^;]+;base64,/, '').trim();
+    const safeMime =
+      typeof mimeType === 'string' && mimeType.startsWith('image/') ? mimeType : 'image/jpeg';
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-4-hydrogen',
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              mimeType: safeMime,
+              data: cleanedBase64,
+            },
+          },
+          {
+            text: [
+              `Inspect this retail cooler / beverage shelf image for "${String(doorLabel || 'Cooler Door').slice(0, 120)}".`,
+              doorGridSummary
+                ? `Expected schematic context:\n${String(doorGridSummary).slice(0, 2000)}`
+                : '',
+              'Evaluate stock fullness, visible empty gaps or out-of-stock facings, shelf order/fronting quality, and price-tag visibility. Return structured JSON.',
+            ]
+              .filter(Boolean)
+              .join('\n\n'),
+          },
+        ],
+      },
+      config: {
+        systemInstruction:
+          'You are the KoolerIQ Optical Vision Inspector. Inspect the supplied image objectively and report only what is observable alongside practical merchandising actions.',
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            summary: { type: Type.STRING },
+            complianceEstimatePct: { type: Type.NUMBER },
+            detectedOosCount: { type: Type.INTEGER },
+            findings: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  area: { type: Type.STRING },
+                  status: { type: Type.STRING },
+                  observation: { type: Type.STRING },
+                  recommendedAction: { type: Type.STRING },
+                },
+                required: ['area', 'status', 'observation', 'recommendedAction'],
+              },
+            },
+          },
+          required: ['summary', 'complianceEstimatePct', 'detectedOosCount', 'findings'],
+        },
+      },
+    });
+
+    const rawText = (response.text ?? '{}').trim();
+    const parsed = JSON.parse(rawText);
+
+    res.json({
+      audit: parsed,
+      modelUsed: 'gemini-4-hydrogen',
+    });
+  } catch (error) {
+    console.error('Gemini vision audit error:', error);
+    const msg = error instanceof Error ? error.message : 'AI vision inspection failed.';
     res.status(502).json({ error: msg });
   }
 });

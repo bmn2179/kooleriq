@@ -56,6 +56,7 @@ export async function upsertWorkspaceForUser(
     insightsJson: unknown;
     auditsJson: unknown;
     settingsJson: unknown;
+    storesJson?: unknown;
   }
 ) {
   try {
@@ -70,6 +71,7 @@ export async function upsertWorkspaceForUser(
         insightsJson: payload.insightsJson,
         auditsJson: payload.auditsJson,
         settingsJson: payload.settingsJson,
+        storesJson: payload.storesJson ?? null,
         updatedAt: new Date(),
       })
       .onConflictDoUpdate({
@@ -82,6 +84,7 @@ export async function upsertWorkspaceForUser(
           insightsJson: payload.insightsJson,
           auditsJson: payload.auditsJson,
           settingsJson: payload.settingsJson,
+          storesJson: payload.storesJson ?? null,
           updatedAt: new Date(),
         },
       })

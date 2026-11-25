@@ -30,6 +30,7 @@ export const storeWorkspaces = pgTable('store_workspaces', {
   insightsJson: jsonb('insights_json').notNull(),
   auditsJson: jsonb('audits_json').notNull(),
   settingsJson: jsonb('settings_json').notNull(),
+  storesJson: jsonb('stores_json'),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 

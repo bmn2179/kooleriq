@@ -1,4 +1,4 @@
-import { CoolerDoor, FacingSlot } from '../types/kooleriq';
+import { CoolerDoor, DoorHardwareType, FacingSlot } from '../types/kooleriq';
 
 export function formatTemp(tempF: number, unit: 'F' | 'C'): string {
   if (unit === 'C') {
@@ -7,6 +7,14 @@ export function formatTemp(tempF: number, unit: 'F' | 'C'): string {
   }
   return `${tempF.toFixed(1)}°F`;
 }
+
+export const HARDWARE_LABELS: Record<DoorHardwareType, string> = {
+  'standard-glass': 'Standard Glass Door',
+  'slim-reach-in': 'Slim Reach-In',
+  'wide-air-curtain': 'Wide Open Air Curtain',
+  'countertop-mini': 'Countertop Mini',
+  'walk-in-cave': 'Walk-In Cave Door',
+};
 
 export function getDoorMetrics(door: CoolerDoor) {
   const allSlots: FacingSlot[] = door.shelves.flat();

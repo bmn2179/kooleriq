@@ -1,4 +1,13 @@
-import { AuditRecord, CoolerDoor, FacingSlot, InsightItem, SkuItem, StoreSettings } from '../types/kooleriq';
+import {
+  AuditRecord,
+  CoolerDoor,
+  DoorHardwareType,
+  FacingSlot,
+  InsightItem,
+  SkuItem,
+  StoreProfile,
+  StoreSettings,
+} from '../types/kooleriq';
 
 export const SKU_CATALOG: Record<string, SkuItem> = {
   'sku-monster-zero': {
@@ -362,9 +371,104 @@ export const SKU_CATALOG: Record<string, SkuItem> = {
     secondaryColor: '#D97706',
     capColor: '#52525B',
   },
+  'sku-alani-cherry': {
+    id: 'sku-alani-cherry',
+    skuCode: 'ALN-CS12',
+    name: 'Alani Nu Cherry Slush',
+    shortName: 'Alani Cherry',
+    brand: 'alani',
+    brandLabel: 'Alani Nu',
+    brandColor: '#EC4899',
+    size: '12 oz',
+    containerType: 'tall-can',
+    price: 3.39,
+    weeklyVelocity: 52,
+    marginPct: 47,
+    backroomQty: 30,
+    parLevel: 36,
+    primaryColor: '#FCE7F3',
+    secondaryColor: '#EC4899',
+    capColor: '#F472B6',
+  },
+  'sku-olipop-grape': {
+    id: 'sku-olipop-grape',
+    skuCode: 'OLI-CG12',
+    name: 'Olipop Classic Grape Prebiotic',
+    shortName: 'Olipop Grape',
+    brand: 'olipop',
+    brandLabel: 'Olipop',
+    brandColor: '#A855F7',
+    size: '12 oz',
+    containerType: 'can',
+    price: 2.99,
+    weeklyVelocity: 47,
+    marginPct: 46,
+    backroomQty: 28,
+    parLevel: 36,
+    primaryColor: '#F3E8FF',
+    secondaryColor: '#9333EA',
+    capColor: '#C084FC',
+  },
+  'sku-olipop-rootbeer': {
+    id: 'sku-olipop-rootbeer',
+    skuCode: 'OLI-RB12',
+    name: 'Olipop Classic Root Beer',
+    shortName: 'Olipop Root',
+    brand: 'olipop',
+    brandLabel: 'Olipop',
+    brandColor: '#A855F7',
+    size: '12 oz',
+    containerType: 'can',
+    price: 2.99,
+    weeklyVelocity: 44,
+    marginPct: 46,
+    backroomQty: 24,
+    parLevel: 36,
+    primaryColor: '#FEF3C7',
+    secondaryColor: '#78350F',
+    capColor: '#B45309',
+  },
+  'sku-yerba-berry': {
+    id: 'sku-yerba-berry',
+    skuCode: 'GYK-RB15',
+    name: 'Guayaki Yerba Mate Revel Berry',
+    shortName: 'Yerba Berry',
+    brand: 'yerba-mate',
+    brandLabel: 'Guayaki',
+    brandColor: '#EAB308',
+    size: '15.5 oz',
+    containerType: 'tall-can',
+    price: 3.79,
+    weeklyVelocity: 42,
+    marginPct: 45,
+    backroomQty: 22,
+    parLevel: 30,
+    primaryColor: '#FEF08A',
+    secondaryColor: '#BE123C',
+    capColor: '#FACC15',
+  },
+  'sku-corepower-choc': {
+    id: 'sku-corepower-choc',
+    skuCode: 'CPR-CH14',
+    name: 'Fairlife Core Power Chocolate 26g',
+    shortName: 'Core Power',
+    brand: 'core-power',
+    brandLabel: 'Core Power',
+    brandColor: '#0EA5E9',
+    size: '14 oz',
+    containerType: 'bottle',
+    price: 4.49,
+    weeklyVelocity: 50,
+    marginPct: 40,
+    backroomQty: 24,
+    parLevel: 36,
+    primaryColor: '#1E293B',
+    secondaryColor: '#0284C7',
+    capColor: '#0369A1',
+  },
 };
 
-function slot(
+export function slot(
   doorPrefix: string,
   s: number,
   f: number,
@@ -399,12 +503,70 @@ function slot(
   };
 }
 
+export function buildCustomDoor(params: {
+  id: string;
+  number: string;
+  label: string;
+  category: string;
+  hardwareType: DoorHardwareType;
+  shelvesCount: number;
+  facingsPerShelf: number;
+  defaultMaxDepth: number;
+  skuPool: string[];
+  tempF?: number;
+}): CoolerDoor {
+  const {
+    id,
+    number,
+    label,
+    category,
+    hardwareType,
+    shelvesCount,
+    facingsPerShelf,
+    defaultMaxDepth,
+    skuPool,
+    tempF = 34.4,
+  } = params;
+  const pool = skuPool.length > 0 ? skuPool : ['sku-coke-orig', 'sku-celsius-peach'];
+  const prefix = `D${number}-${id.slice(-3)}`;
+
+  const shelves: FacingSlot[][] = Array.from({ length: shelvesCount }).map((_, sIdx) =>
+    Array.from({ length: facingsPerShelf }).map((__, fIdx) => {
+      const skuId = pool[(sIdx * facingsPerShelf + fIdx) % pool.length];
+      // Seed realistic depth variation without locking everything full
+      const seed = (sIdx * 7 + fIdx * 3) % 9;
+      const depth = seed === 0 ? 0 : seed === 1 ? 1 : defaultMaxDepth - (seed % 2);
+      return slot(prefix, sIdx, fIdx, skuId, Math.max(0, Math.min(defaultMaxDepth, depth)), defaultMaxDepth);
+    })
+  );
+
+  return {
+    id,
+    number,
+    label,
+    category,
+    hardwareType,
+    facingsPerShelf,
+    defaultMaxDepth,
+    tempF,
+    targetTempF: 34.5,
+    humidityPct: 42,
+    doorOpensToday: 90 + shelvesCount * 14,
+    lastAuditAt: 'Just configured',
+    compressorState: 'nominal',
+    shelves,
+  };
+}
+
 export const INITIAL_DOORS: CoolerDoor[] = [
   {
     id: 'door-01',
     number: '01',
     label: 'Door 01 · Energy & Performance',
     category: 'High-Velocity Energy',
+    hardwareType: 'standard-glass',
+    facingsPerShelf: 6,
+    defaultMaxDepth: 6,
     tempF: 34.2,
     targetTempF: 34.0,
     humidityPct: 41,
@@ -412,7 +574,6 @@ export const INITIAL_DOORS: CoolerDoor[] = [
     lastAuditAt: '14 mins ago',
     compressorState: 'nominal',
     shelves: [
-      // S1 (Eye Level - Red Bull & Celsius)
       [
         slot('D1', 0, 0, 'sku-redbull-orig', 5, 6),
         slot('D1', 0, 1, 'sku-redbull-orig', 4, 6),
@@ -421,7 +582,6 @@ export const INITIAL_DOORS: CoolerDoor[] = [
         slot('D1', 0, 4, 'sku-celsius-peach', 6, 6),
         slot('D1', 0, 5, 'sku-celsius-arctic', 0, 6, { status: 'oos' }),
       ],
-      // S2 (Prime Reach - Monster & Celsius)
       [
         slot('D1', 1, 0, 'sku-monster-zero', 5, 6),
         slot('D1', 1, 1, 'sku-monster-zero', 4, 6),
@@ -439,7 +599,6 @@ export const INITIAL_DOORS: CoolerDoor[] = [
         }),
         slot('D1', 1, 5, 'sku-celsius-kiwi', 5, 6),
       ],
-      // S3
       [
         slot('D1', 2, 0, 'sku-monster-orig', 6, 6),
         slot('D1', 2, 1, 'sku-monster-orig', 5, 6),
@@ -448,7 +607,6 @@ export const INITIAL_DOORS: CoolerDoor[] = [
         slot('D1', 2, 4, 'sku-redbull-orig', 5, 6),
         slot('D1', 2, 5, 'sku-redbull-sf', 0, 6, { status: 'oos' }),
       ],
-      // S4
       [
         slot('D1', 3, 0, 'sku-starbucks-double', 4, 6),
         slot('D1', 3, 1, 'sku-starbucks-double', 2, 6),
@@ -460,7 +618,6 @@ export const INITIAL_DOORS: CoolerDoor[] = [
         slot('D1', 3, 4, 'sku-celsius-kiwi', 5, 6),
         slot('D1', 3, 5, 'sku-redbull-june', 3, 6),
       ],
-      // S5
       [
         slot('D1', 4, 0, 'sku-gatorade-cool', 6, 6),
         slot('D1', 4, 1, 'sku-gatorade-glacier', 5, 6),
@@ -484,6 +641,9 @@ export const INITIAL_DOORS: CoolerDoor[] = [
     number: '02',
     label: 'Door 02 · CSD & Sparkling',
     category: 'Carbonated Soft Drinks',
+    hardwareType: 'standard-glass',
+    facingsPerShelf: 6,
+    defaultMaxDepth: 6,
     tempF: 35.1,
     targetTempF: 35.0,
     humidityPct: 44,
@@ -546,6 +706,9 @@ export const INITIAL_DOORS: CoolerDoor[] = [
     number: '03',
     label: 'Door 03 · Hydration & Isotonic',
     category: 'Sports & Alkaline Water',
+    hardwareType: 'standard-glass',
+    facingsPerShelf: 6,
+    defaultMaxDepth: 6,
     tempF: 34.8,
     targetTempF: 34.5,
     humidityPct: 39,
@@ -608,6 +771,9 @@ export const INITIAL_DOORS: CoolerDoor[] = [
     number: '04',
     label: 'Door 04 · Cold Brew & Craft',
     category: 'RTD Coffee & Specialty',
+    hardwareType: 'standard-glass',
+    facingsPerShelf: 6,
+    defaultMaxDepth: 6,
     tempF: 37.9,
     targetTempF: 34.5,
     humidityPct: 48,
@@ -795,6 +961,254 @@ export const INITIAL_SETTINGS: StoreSettings = {
   autoRestockSync: true,
   cameraGridOverlay: true,
 };
+
+const BODEGA_DOORS: CoolerDoor[] = [
+  buildCustomDoor({
+    id: 'bodega-d1',
+    number: '01',
+    label: 'Door 01 · Prebiotic Soda & Craft',
+    category: 'Better-For-You Fizz',
+    hardwareType: 'slim-reach-in',
+    shelvesCount: 5,
+    facingsPerShelf: 4,
+    defaultMaxDepth: 5,
+    tempF: 35.4,
+    skuPool: [
+      'sku-olipop-grape',
+      'sku-olipop-rootbeer',
+      'sku-alani-cherry',
+      'sku-liquid-death-lime',
+      'sku-liquid-death-mtn',
+      'sku-celsius-peach',
+    ],
+  }),
+  buildCustomDoor({
+    id: 'bodega-d2',
+    number: '02',
+    label: 'Door 02 · Organic Tea, Coffee & Protein',
+    category: 'Grab-n-Go Functional',
+    hardwareType: 'countertop-mini',
+    shelvesCount: 4,
+    facingsPerShelf: 4,
+    defaultMaxDepth: 4,
+    tempF: 34.6,
+    skuPool: [
+      'sku-yerba-berry',
+      'sku-corepower-choc',
+      'sku-starbucks-frap',
+      'sku-starbucks-double',
+      'sku-alani-cherry',
+    ],
+  }),
+];
+
+const TRAVEL_PLAZA_DOORS: CoolerDoor[] = [
+  buildCustomDoor({
+    id: 'plaza-d1',
+    number: '01',
+    label: 'Air Curtain · High-Turn Energy',
+    category: 'Open Front Energy',
+    hardwareType: 'wide-air-curtain',
+    shelvesCount: 5,
+    facingsPerShelf: 8,
+    defaultMaxDepth: 8,
+    tempF: 35.8,
+    skuPool: [
+      'sku-redbull-orig',
+      'sku-redbull-sf',
+      'sku-redbull-june',
+      'sku-monster-zero',
+      'sku-monster-orig',
+      'sku-celsius-peach',
+      'sku-celsius-arctic',
+      'sku-alani-cherry',
+    ],
+  }),
+  buildCustomDoor({
+    id: 'plaza-d2',
+    number: '02',
+    label: 'Door 02 · Highway Hydration & Protein',
+    category: 'Sports & Recovery',
+    hardwareType: 'standard-glass',
+    shelvesCount: 5,
+    facingsPerShelf: 6,
+    defaultMaxDepth: 7,
+    tempF: 34.1,
+    skuPool: [
+      'sku-gatorade-cool',
+      'sku-gatorade-glacier',
+      'sku-corepower-choc',
+      'sku-liquid-death-mtn',
+      'sku-liquid-death-lime',
+    ],
+  }),
+  buildCustomDoor({
+    id: 'plaza-d3',
+    number: '03',
+    label: 'Door 03 · CSD & Family Singles',
+    category: 'Carbonated Soft Drinks',
+    hardwareType: 'standard-glass',
+    shelvesCount: 6,
+    facingsPerShelf: 6,
+    defaultMaxDepth: 7,
+    tempF: 34.9,
+    skuPool: [
+      'sku-coke-orig',
+      'sku-coke-zero',
+      'sku-diet-coke',
+      'sku-sprite-20',
+      'sku-olipop-rootbeer',
+    ],
+  }),
+  buildCustomDoor({
+    id: 'plaza-d4',
+    number: '04',
+    label: 'Walk-In Cave · Cold Brew & Tea',
+    category: 'Coffee & Yerba Mate',
+    hardwareType: 'walk-in-cave',
+    shelvesCount: 4,
+    facingsPerShelf: 6,
+    defaultMaxDepth: 8,
+    tempF: 33.8,
+    skuPool: [
+      'sku-starbucks-double',
+      'sku-starbucks-frap',
+      'sku-yerba-berry',
+      'sku-corepower-choc',
+    ],
+  }),
+];
+
+export const INITIAL_STORES: StoreProfile[] = [
+  {
+    id: 'store-shell-1042',
+    layoutTemplate: '4-Door C-Store Standard',
+    doors: INITIAL_DOORS,
+    carriedSkuIds: [
+      'sku-monster-zero',
+      'sku-monster-orig',
+      'sku-monster-mango',
+      'sku-celsius-peach',
+      'sku-celsius-arctic',
+      'sku-celsius-kiwi',
+      'sku-redbull-orig',
+      'sku-redbull-sf',
+      'sku-redbull-june',
+      'sku-coke-orig',
+      'sku-coke-zero',
+      'sku-diet-coke',
+      'sku-sprite-20',
+      'sku-gatorade-cool',
+      'sku-gatorade-glacier',
+      'sku-liquid-death-mtn',
+      'sku-liquid-death-lime',
+      'sku-starbucks-frap',
+      'sku-starbucks-double',
+    ],
+    insights: INITIAL_INSIGHTS,
+    audits: INITIAL_AUDITS,
+    settings: INITIAL_SETTINGS,
+  },
+  {
+    id: 'store-bodega-09',
+    layoutTemplate: '2-Door Slim & Craft Bodega',
+    doors: BODEGA_DOORS,
+    carriedSkuIds: [
+      'sku-olipop-grape',
+      'sku-olipop-rootbeer',
+      'sku-alani-cherry',
+      'sku-yerba-berry',
+      'sku-corepower-choc',
+      'sku-liquid-death-lime',
+      'sku-liquid-death-mtn',
+      'sku-celsius-peach',
+      'sku-starbucks-frap',
+      'sku-starbucks-double',
+    ],
+    insights: [
+      {
+        id: 'ins-bod-01',
+        doorId: 'bodega-d1',
+        doorLabel: 'Door 01 · Prebiotic Soda & Craft',
+        slotId: 'D01-ad1-S1-F02',
+        slotCoord: 'S1-F02',
+        currentSkuId: 'sku-olipop-rootbeer',
+        recommendedSkuId: 'sku-alani-cherry',
+        projectedLiftPct: 19,
+        weeklyDollarGain: 64,
+        confidence: 92,
+        rationale: 'Alani Nu Cherry Slush drives higher eye-level impulse margin in slim urban reach-ins.',
+        status: 'pending',
+      },
+    ],
+    audits: [
+      {
+        id: 'aud-bod-01',
+        doorId: 'bodega-d1',
+        doorLabel: 'Door 01 · Prebiotic Soda & Craft',
+        timestamp: 'Today · 08:30 AM',
+        compliancePct: 90.0,
+        facingsDetected: 18,
+        totalFacings: 20,
+        oosCount: 2,
+        aiConfidence: 97.2,
+        status: 'verified',
+        summary: 'Slim 5x4 cooler verified; Olipop Grape S1-F01 and Liquid Death Lime S3-F03 need restock.',
+      },
+    ],
+    settings: {
+      ...INITIAL_SETTINGS,
+      storeName: 'Greenleaf Market & Bodega',
+      storeCode: 'ATX-BD09',
+      address: '1804 E Cesar Chavez St, Austin, TX',
+      routeId: 'ROUTE-URBAN-03',
+    },
+  },
+  {
+    id: 'store-plaza-208',
+    layoutTemplate: 'Travel Plaza Open Air Curtain + Cave',
+    doors: TRAVEL_PLAZA_DOORS,
+    carriedSkuIds: Object.keys(SKU_CATALOG),
+    insights: [
+      {
+        id: 'ins-plaza-01',
+        doorId: 'plaza-d1',
+        doorLabel: 'Air Curtain · High-Turn Energy',
+        slotId: 'D01-ad1-S2-F04',
+        slotCoord: 'S2-F04',
+        currentSkuId: 'sku-monster-orig',
+        recommendedSkuId: 'sku-celsius-peach',
+        projectedLiftPct: 22,
+        weeklyDollarGain: 98,
+        confidence: 94,
+        rationale: '8-wide open air curtain captures highway commuter energy purchases; double Celsius eye-level block.',
+        status: 'pending',
+      },
+    ],
+    audits: [
+      {
+        id: 'aud-plaza-01',
+        doorId: 'plaza-d1',
+        doorLabel: 'Air Curtain · High-Turn Energy',
+        timestamp: 'Today · 09:05 AM',
+        compliancePct: 92.5,
+        facingsDetected: 37,
+        totalFacings: 40,
+        oosCount: 3,
+        aiConfidence: 98.0,
+        status: 'synced',
+        summary: 'Wide 5x8 air-curtain bay audited; 3 OOS slots flagged for walk-in replenishment.',
+      },
+    ],
+    settings: {
+      ...INITIAL_SETTINGS,
+      storeName: 'I-35 Travel Plaza #208',
+      storeCode: 'TX-I35-208',
+      address: '9210 Interstate 35 N, Round Rock, TX',
+      routeId: 'ROUTE-HWY-01',
+    },
+  },
+];
 
 export const HOURLY_COOLER_TELEMETRY = [
   { hour: '6a', opens: 18, tempF: 33.9 },

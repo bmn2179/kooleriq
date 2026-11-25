@@ -7,12 +7,14 @@ import {
   Minus,
   Plus,
   RefreshCw,
+  ScanBarcode,
+  SlidersHorizontal,
   Sparkles,
   ThermometerSnowflake,
   X,
 } from 'lucide-react';
 import { CoolerDoor, FacingSlot, SkuItem, StoreSettings } from '../types/kooleriq';
-import { formatTemp, getDoorMetrics } from '../utils/formatters';
+import { formatTemp, getDoorMetrics, HARDWARE_LABELS } from '../utils/formatters';
 import { BeverageVisual } from './BeverageVisual';
 
 interface PlanogramScreenProps {
@@ -20,34 +22,58 @@ interface PlanogramScreenProps {
   selectedDoorId: string;
   onSelectDoor: (doorId: string) => void;
   skuCatalog: Record<string, SkuItem>;
+  carriedSkuIds: string[];
   settings: StoreSettings;
   onAdjustDepth: (doorId: string, slotId: string, delta: number) => void;
   onRestockFull: (doorId: string, slotId: string) => void;
+  onAssignSlotSku: (doorId: string, slotId: string, newSkuId: string) => void;
   onApplySlotAi: (doorId: string, slotId: string) => void;
   onFixViolation: (doorId: string, slotId: string) => void;
   onOptimizeDoor: (doorId: string) => void;
   onRestockAllDoorOos: (doorId: string) => void;
+  onOpenDoorEditor: () => void;
+  onOpenAddSkuModal: () => void;
+  onOpenScannerForSlot: (target: {
+    doorId: string;
+    doorNumber: string;
+    slotId: string;
+    slotCoord: string;
+  }) => void;
   onGoToAudit: () => void;
 }
 
 type PlanogramFilter = 'all' | 'oos' | 'ai' | 'low';
+
+function getShelfGridClass(count: number): string {
+  if (count <= 3) return 'grid-cols-3';
+  if (count === 4) return 'grid-cols-2 sm:grid-cols-4';
+  if (count === 5) return 'grid-cols-2 sm:grid-cols-5';
+  if (count === 6) return 'grid-cols-3 sm:grid-cols-6';
+  if (count === 7) return 'grid-cols-3 sm:grid-cols-7';
+  return 'grid-cols-4 sm:grid-cols-8';
+}
 
 export const PlanogramScreen: React.FC<PlanogramScreenProps> = ({
   doors,
   selectedDoorId,
   onSelectDoor,
   skuCatalog,
+  carriedSkuIds,
   settings,
   onAdjustDepth,
   onRestockFull,
+  onAssignSlotSku,
   onApplySlotAi,
   onFixViolation,
   onOptimizeDoor,
   onRestockAllDoorOos,
+  onOpenDoorEditor,
+  onOpenAddSkuModal,
+  onOpenScannerForSlot,
   onGoToAudit,
 }) => {
   const [filter, setFilter] = useState<PlanogramFilter>('all');
-  const [selectedSlotId, setSelectedSlotId] = useState<string>('D1-S2-F05');
+  const [selectedSlotId, setSelectedSlotId] = useState<string>('');
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
 
   const activeDoor = useMemo(
@@ -61,6 +87,22 @@ export const PlanogramScreen: React.FC<PlanogramScreenProps> = ({
     const flat = activeDoor.shelves.flat();
     return flat.find((s) => s.id === selectedSlotId) ?? flat[0];
   }, [activeDoor, selectedSlotId]);
+
+  const { carriedOptions, catalogOptions } = useMemo(() => {
+    const carriedSet = new Set(carriedSkuIds);
+    const carried: SkuItem[] = [];
+    const catalog: SkuItem[] = [];
+    Object.values(skuCatalog).forEach((sku) => {
+      if (carriedSet.has(sku.id) || sku.id === selectedSlot?.skuId) {
+        carried.push(sku);
+      } else {
+        catalog.push(sku);
+      }
+    });
+    carried.sort((a, b) => a.name.localeCompare(b.name));
+    catalog.sort((a, b) => a.name.localeCompare(b.name));
+    return { carriedOptions: carried, catalogOptions: catalog };
+  }, [skuCatalog, carriedSkuIds, selectedSlot?.skuId]);
 
   const handleDoorSwitch = (doorId: string) => {
     onSelectDoor(doorId);
@@ -96,40 +138,51 @@ export const PlanogramScreen: React.FC<PlanogramScreenProps> = ({
     activeDoor.tempF > settings.maxTempAlertF || activeDoor.tempF < settings.minTempAlertF;
 
   const renderInspectorContent = (slot: FacingSlot) => {
-    const sku = skuCatalog[slot.skuId];
-    const plannedSku = skuCatalog[slot.plannedSkuId];
+    const sku = skuCatalog[slot.skuId] ?? Object.values(skuCatalog)[0];
+    const plannedSku = skuCatalog[slot.plannedSkuId] ?? sku;
     const recSku = slot.aiRecommendation ? skuCatalog[slot.aiRecommendation.targetSkuId] : null;
     const isOos = slot.currentDepth === 0;
     const isViolation = slot.skuId !== slot.plannedSkuId;
 
     return (
-      <div className="space-y-5">
+      <div className="space-y-4">
         {/* Coordinate Header */}
-        <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-4">
+        <div className="flex items-start justify-between gap-3 border-b border-[var(--kq-border)] pb-4">
           <div className="flex items-center gap-3.5 min-w-0">
-            <div className="w-14 h-20 rounded-lg bg-[#0A1128] border border-white/10 flex items-center justify-center shrink-0">
+            <div className="w-14 h-20 rounded-lg bg-[var(--kq-cabinet)] border border-[var(--kq-border)] flex items-center justify-center shrink-0">
               <BeverageVisual sku={sku} size="md" dimmed={isOos} />
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-2 text-xs font-mono-tabular text-[#00E5FF]">
+              <div className="flex items-center gap-2 text-xs font-mono-tabular text-[var(--kq-accent)] font-semibold">
                 <span>DOOR {activeDoor.number}</span>
                 <span aria-hidden="true">·</span>
                 <span>{slot.coord}</span>
                 <span aria-hidden="true">·</span>
                 <span>{sku.skuCode}</span>
               </div>
-              <h3 className="text-base font-semibold text-[#DCE1FF] mt-1 truncate">{sku.name}</h3>
-              <p className="text-xs text-[#BAC9CC] mt-0.5">
+              <h3 className="text-base font-semibold text-[var(--kq-text)] mt-1 truncate">
+                {sku.name}
+              </h3>
+              <p className="text-xs text-[var(--kq-text-secondary)] mt-0.5">
                 {sku.brandLabel} · {sku.size} · ${sku.price.toFixed(2)} retail ·{' '}
-                <span className="font-mono-tabular text-[#DCE1FF]">{sku.weeklyVelocity}/wk</span>
+                <span className="font-mono-tabular text-[var(--kq-text)] font-medium">
+                  {sku.weeklyVelocity}/wk
+                </span>
               </p>
+              {(sku.upc || sku.distributor) && (
+                <p className="text-[11px] font-mono-tabular text-[var(--kq-text-muted)] mt-1 truncate">
+                  {sku.upc ? `UPC ${sku.upc}` : ''}
+                  {sku.upc && sku.distributor ? ' · ' : ''}
+                  {sku.distributor || ''}
+                </p>
+              )}
             </div>
           </div>
           {mobileSheetOpen && (
             <button
               type="button"
               onClick={() => setMobileSheetOpen(false)}
-              className="lg:hidden min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md text-[#BAC9CC] hover:text-white hover:bg-white/5"
+              className="lg:hidden min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md text-[var(--kq-text-secondary)] hover:text-[var(--kq-text)] hover:bg-[var(--kq-surface-muted)]"
               aria-label="Close slot inspector"
             >
               <X className="w-5 h-5" />
@@ -137,36 +190,126 @@ export const PlanogramScreen: React.FC<PlanogramScreenProps> = ({
           )}
         </div>
 
+        {/* Wholesale Cost & Gross Margin Strip */}
+        {(typeof sku.netUnitCost === 'number' || sku.marginPct > 0) && (
+          <div className="grid grid-cols-3 gap-2 rounded-lg bg-[var(--kq-surface-muted)] border border-[var(--kq-border)] p-2.5 text-xs font-mono-tabular">
+            <div>
+              <div className="text-[10px] text-[var(--kq-text-muted)]">Net Cost/u</div>
+              <div className="font-semibold text-[var(--kq-text)] mt-0.5">
+                {typeof sku.netUnitCost === 'number' ? `$${sku.netUnitCost.toFixed(2)}` : '—'}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] text-[var(--kq-text-muted)]">
+                Case ({sku.unitsPerCase ?? 12}u)
+              </div>
+              <div className="font-semibold text-[var(--kq-text)] mt-0.5">
+                {typeof sku.netCaseCost === 'number' ? `$${sku.netCaseCost.toFixed(2)}` : '—'}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] text-[var(--kq-text-muted)]">Est. Margin</div>
+              <div className="font-semibold text-[var(--kq-emerald)] mt-0.5">
+                {sku.marginPct.toFixed(1)}%
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Assign Drink to Slot (Per-Store Custom Assortment) */}
+        <div className="bg-[var(--kq-surface-muted)] rounded-lg p-3.5 border border-[var(--kq-border)] space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <label
+              htmlFor={`slot-sku-select-${slot.id}`}
+              className="text-xs font-medium text-[var(--kq-text-secondary)]"
+            >
+              Assigned Drink for {slot.coord}
+            </label>
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() =>
+                  onOpenScannerForSlot({
+                    doorId: activeDoor.id,
+                    doorNumber: activeDoor.number,
+                    slotId: slot.id,
+                    slotCoord: slot.coord,
+                  })
+                }
+                className="text-[11px] font-semibold text-[var(--kq-accent)] hover:underline inline-flex items-center gap-1 whitespace-nowrap"
+              >
+                <ScanBarcode className="w-3.5 h-3.5" />
+                Scan UPC
+              </button>
+              <button
+                type="button"
+                onClick={onOpenAddSkuModal}
+                className="text-[11px] font-semibold text-[var(--kq-accent)] hover:underline whitespace-nowrap"
+              >
+                + New Drink
+              </button>
+            </div>
+          </div>
+          <select
+            id={`slot-sku-select-${slot.id}`}
+            value={slot.skuId}
+            onChange={(e) => onAssignSlotSku(activeDoor.id, slot.id, e.target.value)}
+            className="w-full min-h-[42px] px-3 rounded bg-[var(--kq-surface)] border border-[var(--kq-border-strong)] text-xs text-[var(--kq-text)] focus:outline-none focus:border-[var(--kq-accent)]"
+          >
+            <optgroup label={`Carried at Store (${carriedOptions.length})`}>
+              {carriedOptions.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name} · ${item.price.toFixed(2)}
+                </option>
+              ))}
+            </optgroup>
+            {catalogOptions.length > 0 && (
+              <optgroup label={`Swire Coca-Cola & PepsiCo Catalog (${catalogOptions.length})`}>
+                {catalogOptions.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name} · {item.distributor || 'Distributor'} · ${item.price.toFixed(2)}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+        </div>
+
         {/* Facing Depth Control */}
-        <div className="bg-[#0A1128]/80 rounded-lg p-3.5 border border-white/10">
+        <div className="bg-[var(--kq-surface-muted)] rounded-lg p-3.5 border border-[var(--kq-border)]">
           <div className="flex items-center justify-between mb-2.5">
-            <span className="text-xs font-medium text-[#BAC9CC]">Shelf Facing Depth</span>
+            <span className="text-xs font-medium text-[var(--kq-text-secondary)]">
+              Shelf Facing Depth
+            </span>
             <span
               className={`text-sm font-mono-tabular font-semibold ${
                 isOos
-                  ? 'text-[#FF5A5F]'
+                  ? 'text-[var(--kq-crimson)]'
                   : slot.currentDepth <= 1
-                    ? 'text-[#FF9F1C]'
-                    : 'text-[#10B981]'
+                    ? 'text-[var(--kq-amber)]'
+                    : 'text-[var(--kq-emerald)]'
               }`}
             >
               {slot.currentDepth} / {slot.maxDepth} units
             </span>
           </div>
 
-          {/* Segmented Depth Bars */}
-          <div className="grid grid-cols-6 gap-1.5 mb-3.5" aria-hidden="true">
+          <div
+            className="grid gap-1.5 mb-3.5"
+            style={{ gridTemplateColumns: `repeat(${slot.maxDepth}, minmax(0, 1fr))` }}
+            aria-hidden="true"
+          >
             {Array.from({ length: slot.maxDepth }).map((_, idx) => (
               <div
                 key={idx}
                 className={`h-2 rounded-sm transition-colors ${
                   idx < slot.currentDepth
                     ? isOos
-                      ? 'bg-[#FF5A5F]'
+                      ? 'bg-[var(--kq-crimson)]'
                       : slot.currentDepth <= 1
-                        ? 'bg-[#FF9F1C]'
-                        : 'bg-[#00E5FF]'
-                    : 'bg-white/10'
+                        ? 'bg-[var(--kq-amber)]'
+                        : 'bg-[var(--kq-accent)]'
+                    : 'bg-[var(--kq-border-strong)]'
                 }`}
               />
             ))}
@@ -177,7 +320,7 @@ export const PlanogramScreen: React.FC<PlanogramScreenProps> = ({
               type="button"
               onClick={() => onAdjustDepth(activeDoor.id, slot.id, -1)}
               disabled={slot.currentDepth <= 0}
-              className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded bg-[#18274D] border border-white/10 text-[#DCE1FF] hover:border-[#00E5FF]/50 disabled:opacity-40 transition-colors"
+              className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded bg-[var(--kq-surface)] border border-[var(--kq-border-strong)] text-[var(--kq-text)] hover:border-[var(--kq-accent)] disabled:opacity-40 transition-colors"
               aria-label="Decrease facing depth by 1"
             >
               <Minus className="w-4 h-4" />
@@ -186,7 +329,7 @@ export const PlanogramScreen: React.FC<PlanogramScreenProps> = ({
               type="button"
               onClick={() => onAdjustDepth(activeDoor.id, slot.id, 1)}
               disabled={slot.currentDepth >= slot.maxDepth}
-              className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded bg-[#18274D] border border-white/10 text-[#DCE1FF] hover:border-[#00E5FF]/50 disabled:opacity-40 transition-colors"
+              className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded bg-[var(--kq-surface)] border border-[var(--kq-border-strong)] text-[var(--kq-text)] hover:border-[var(--kq-accent)] disabled:opacity-40 transition-colors"
               aria-label="Increase facing depth by 1"
             >
               <Plus className="w-4 h-4" />
@@ -195,31 +338,31 @@ export const PlanogramScreen: React.FC<PlanogramScreenProps> = ({
               type="button"
               onClick={() => onRestockFull(activeDoor.id, slot.id)}
               disabled={slot.currentDepth >= slot.maxDepth}
-              className="flex-1 min-h-[44px] px-4 rounded bg-[#00E5FF] text-[#0A1128] font-semibold text-sm hover:bg-[#33ECFF] disabled:opacity-40 transition-colors whitespace-nowrap"
+              className="flex-1 min-h-[44px] px-4 rounded bg-[var(--kq-accent)] text-[var(--kq-accent-fg)] font-semibold text-sm hover:bg-[var(--kq-accent-hover)] disabled:opacity-40 transition-colors whitespace-nowrap"
             >
               Restock to {slot.maxDepth}/{slot.maxDepth}
             </button>
           </div>
-          <p className="text-xs text-[#849396] mt-2.5 font-mono-tabular">
+          <p className="text-xs text-[var(--kq-text-muted)] mt-2.5 font-mono-tabular">
             Walk-in backroom stock: {sku.backroomQty} units
           </p>
         </div>
 
         {/* Planogram Violation Resolution */}
         {isViolation && (
-          <div className="rounded-lg p-3.5 bg-[#FF5A5F]/10 border border-[#FF5A5F]/40">
-            <div className="flex items-center gap-2 text-xs font-semibold text-[#FFB4AB]">
-              <AlertTriangle className="w-4 h-4 text-[#FF5A5F] shrink-0" />
+          <div className="rounded-lg p-3.5 bg-[var(--kq-crimson-soft)] border border-[var(--kq-crimson)]">
+            <div className="flex items-center gap-2 text-xs font-semibold text-[var(--kq-crimson-text)]">
+              <AlertTriangle className="w-4 h-4 text-[var(--kq-crimson)] shrink-0" />
               <span>Planogram Misplacement Detected</span>
             </div>
-            <p className="text-xs text-[#DCE1FF] mt-1.5 leading-relaxed">
+            <p className="text-xs text-[var(--kq-text)] mt-1.5 leading-relaxed">
               Expected <span className="font-semibold">{plannedSku.name}</span> in {slot.coord},
               currently stocked with {sku.shortName}.
             </p>
             <button
               type="button"
               onClick={() => onFixViolation(activeDoor.id, slot.id)}
-              className="mt-3 w-full min-h-[44px] px-3 rounded bg-[#FF5A5F]/20 border border-[#FF5A5F] text-white text-xs font-semibold hover:bg-[#FF5A5F]/30 transition-colors"
+              className="mt-3 w-full min-h-[44px] px-3 rounded bg-[var(--kq-crimson)] text-white text-xs font-semibold hover:opacity-90 transition-opacity"
             >
               Restore {plannedSku.shortName} to Slot
             </button>
@@ -228,32 +371,34 @@ export const PlanogramScreen: React.FC<PlanogramScreenProps> = ({
 
         {/* AI Recommendation Card */}
         {slot.aiRecommendation && !slot.aiRecommendation.applied && recSku && (
-          <div className="rounded-lg p-3.5 bg-[#10B981]/10 border border-[#10B981]/40">
+          <div className="rounded-lg p-3.5 bg-[var(--kq-emerald-soft)] border border-[var(--kq-emerald)]">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-semibold text-[#A8FFD2] flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-[#10B981]" />
+              <span className="text-xs font-semibold text-[var(--kq-emerald-text)] flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-[var(--kq-emerald)]" />
                 AI Facing Optimization
               </span>
-              <span className="font-mono-tabular text-xs font-bold text-[#10B981]">
+              <span className="font-mono-tabular text-xs font-bold text-[var(--kq-emerald)]">
                 +{slot.aiRecommendation.projectedLiftPct}% REV · +$
                 {slot.aiRecommendation.weeklyDollarGain}/wk
               </span>
             </div>
 
-            <div className="flex items-center gap-2.5 mt-3 bg-[#0A1128]/70 rounded p-2.5 border border-white/10">
-              <span className="text-xs text-[#BAC9CC] truncate">{sku.shortName}</span>
-              <ArrowRight className="w-3.5 h-3.5 text-[#10B981] shrink-0" />
-              <span className="text-xs font-semibold text-[#DCE1FF] truncate">{recSku.name}</span>
+            <div className="flex items-center gap-2.5 mt-3 bg-[var(--kq-surface)] rounded p-2.5 border border-[var(--kq-border)]">
+              <span className="text-xs text-[var(--kq-text-secondary)] truncate">{sku.shortName}</span>
+              <ArrowRight className="w-3.5 h-3.5 text-[var(--kq-emerald)] shrink-0" />
+              <span className="text-xs font-semibold text-[var(--kq-text)] truncate">
+                {recSku.name}
+              </span>
             </div>
 
-            <p className="text-xs text-[#BAC9CC] mt-2.5 leading-relaxed">
+            <p className="text-xs text-[var(--kq-text-secondary)] mt-2.5 leading-relaxed">
               {slot.aiRecommendation.reason}
             </p>
 
             <button
               type="button"
               onClick={() => onApplySlotAi(activeDoor.id, slot.id)}
-              className="mt-3 w-full min-h-[44px] px-4 rounded bg-[#10B981] text-[#052016] font-semibold text-sm hover:bg-[#34D399] transition-colors flex items-center justify-center gap-2"
+              className="mt-3 w-full min-h-[44px] px-4 rounded bg-[var(--kq-emerald)] text-white font-semibold text-sm hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
             >
               <Check className="w-4 h-4" />
               Apply AI Swap (+${slot.aiRecommendation.weeklyDollarGain}/wk)
@@ -282,16 +427,22 @@ export const PlanogramScreen: React.FC<PlanogramScreenProps> = ({
                 onClick={() => handleDoorSwitch(door.id)}
                 className={`min-h-[44px] px-3.5 py-2 rounded-lg border text-left transition-colors shrink-0 flex items-center gap-3 ${
                   isSelected
-                    ? 'bg-[#18274D] border-[#00E5FF] text-[#DCE1FF]'
-                    : 'bg-[#101F42] border-white/10 text-[#BAC9CC] hover:border-white/25 hover:text-[#DCE1FF]'
+                    ? 'bg-[var(--kq-surface-elevated)] border-[var(--kq-accent)] text-[var(--kq-text)]'
+                    : 'bg-[var(--kq-surface)] border-[var(--kq-border-strong)] text-[var(--kq-text-secondary)] hover:border-[var(--kq-accent-border)] hover:text-[var(--kq-text)]'
                 }`}
               >
                 <div>
                   <div className="text-xs font-semibold whitespace-nowrap">
-                    Door {door.number} · {door.category.split(' ')[0]}
+                    Door {door.number} · {door.shelves.length}×{door.facingsPerShelf}
                   </div>
-                  <div className="text-[11px] font-mono-tabular text-[#849396] flex items-center gap-1.5 mt-0.5">
-                    <span className={warnTemp ? 'text-[#FF5A5F] font-semibold' : 'text-[#00E5FF]'}>
+                  <div className="text-[11px] font-mono-tabular text-[var(--kq-text-muted)] flex items-center gap-1.5 mt-0.5">
+                    <span
+                      className={
+                        warnTemp
+                          ? 'text-[var(--kq-crimson)] font-semibold'
+                          : 'text-[var(--kq-accent)] font-medium'
+                      }
+                    >
                       {formatTemp(door.tempF, settings.tempUnit)}
                     </span>
                     <span aria-hidden="true">·</span>
@@ -299,7 +450,9 @@ export const PlanogramScreen: React.FC<PlanogramScreenProps> = ({
                     {doorStats.oosCount > 0 && (
                       <>
                         <span aria-hidden="true">·</span>
-                        <span className="text-[#FF5A5F]">{doorStats.oosCount} OOS</span>
+                        <span className="text-[var(--kq-crimson)] font-medium">
+                          {doorStats.oosCount} OOS
+                        </span>
                       </>
                     )}
                   </div>
@@ -309,11 +462,19 @@ export const PlanogramScreen: React.FC<PlanogramScreenProps> = ({
           })}
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={onOpenDoorEditor}
+            className="min-h-[44px] px-3.5 py-2 rounded-lg bg-[var(--kq-surface)] border border-[var(--kq-border-strong)] text-[var(--kq-text)] text-xs font-semibold hover:border-[var(--kq-accent)] transition-colors flex items-center gap-2 whitespace-nowrap shrink-0"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5 text-[var(--kq-accent)]" />
+            Edit Cooler Layout
+          </button>
           <button
             type="button"
             onClick={onGoToAudit}
-            className="min-h-[44px] px-4 py-2 rounded bg-[#00E5FF]/10 border border-[#00E5FF] text-[#00E5FF] text-xs font-semibold hover:bg-[#00E5FF]/20 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0"
+            className="min-h-[44px] px-3.5 py-2 rounded-lg bg-[var(--kq-accent-soft)] border border-[var(--kq-accent-border)] text-[var(--kq-accent)] text-xs font-semibold hover:opacity-90 transition-opacity flex items-center gap-2 whitespace-nowrap shrink-0"
           >
             <Camera className="w-4 h-4" />
             Scan Shelves
@@ -322,22 +483,22 @@ export const PlanogramScreen: React.FC<PlanogramScreenProps> = ({
             <button
               type="button"
               onClick={() => onRestockAllDoorOos(activeDoor.id)}
-              className="min-h-[44px] px-4 py-2 rounded bg-[#FF9F1C]/15 border border-[#FF9F1C] text-[#FFCF87] text-xs font-semibold hover:bg-[#FF9F1C]/25 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0"
+              className="min-h-[44px] px-3.5 py-2 rounded-lg bg-[var(--kq-amber-soft)] border border-[var(--kq-amber)] text-[var(--kq-amber-text)] text-xs font-semibold hover:opacity-90 transition-opacity flex items-center gap-2 whitespace-nowrap shrink-0"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              Fill {metrics.oosCount} OOS Gaps
+              Fill {metrics.oosCount} OOS
             </button>
           )}
           <button
             type="button"
             onClick={() => onOptimizeDoor(activeDoor.id)}
             disabled={metrics.aiOpportunityCount === 0}
-            className="min-h-[44px] px-4 py-2 rounded bg-[#00E5FF] text-[#0A1128] text-xs font-semibold hover:bg-[#33ECFF] disabled:opacity-45 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0"
+            className="min-h-[44px] px-4 py-2 rounded-lg bg-[var(--kq-accent)] text-[var(--kq-accent-fg)] text-xs font-semibold hover:bg-[var(--kq-accent-hover)] disabled:opacity-45 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0"
           >
             <Sparkles className="w-3.5 h-3.5" />
             {metrics.aiOpportunityCount > 0
               ? `AI Optimize (+$${metrics.projectedWeeklyLift}/wk)`
-              : 'Door AI Optimized'}
+              : 'AI Optimized'}
           </button>
         </div>
       </div>
@@ -345,49 +506,52 @@ export const PlanogramScreen: React.FC<PlanogramScreenProps> = ({
       {/* 4-Column Telemetry Strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="glacier-card rounded-lg p-3.5">
-          <div className="flex items-center justify-between text-xs text-[#BAC9CC]">
+          <div className="flex items-center justify-between text-xs text-[var(--kq-text-secondary)]">
             <span>Cooler Temp</span>
             <ThermometerSnowflake
-              className={`w-4 h-4 ${isTempWarning ? 'text-[#FF5A5F]' : 'text-[#00E5FF]'}`}
+              className={`w-4 h-4 ${
+                isTempWarning ? 'text-[var(--kq-crimson)]' : 'text-[var(--kq-accent)]'
+              }`}
             />
           </div>
           <div
             className={`text-2xl font-mono-tabular font-bold mt-1 ${
-              isTempWarning ? 'text-[#FF5A5F]' : 'text-[#DCE1FF]'
+              isTempWarning ? 'text-[var(--kq-crimson)]' : 'text-[var(--kq-text)]'
             }`}
           >
             {formatTemp(activeDoor.tempF, settings.tempUnit)}
           </div>
-          <div className="text-[11px] text-[#849396] mt-0.5 font-mono-tabular">
-            Target {formatTemp(activeDoor.targetTempF, settings.tempUnit)} · {activeDoor.doorOpensToday} opens
+          <div className="text-[11px] text-[var(--kq-text-muted)] mt-0.5 font-mono-tabular">
+            {HARDWARE_LABELS[activeDoor.hardwareType]} · {activeDoor.doorOpensToday} opens
           </div>
         </div>
 
         <div className="glacier-card rounded-lg p-3.5">
-          <div className="text-xs text-[#BAC9CC]">Planogram Compliance</div>
-          <div className="text-2xl font-mono-tabular font-bold text-[#DCE1FF] mt-1">
+          <div className="text-xs text-[var(--kq-text-secondary)]">Planogram Compliance</div>
+          <div className="text-2xl font-mono-tabular font-bold text-[var(--kq-text)] mt-1">
             {metrics.compliancePct.toFixed(1)}%
           </div>
-          <div className="text-[11px] text-[#849396] mt-0.5 font-mono-tabular">
-            {metrics.compliantCount}/{metrics.totalFacings} facings compliant
+          <div className="text-[11px] text-[var(--kq-text-muted)] mt-0.5 font-mono-tabular">
+            {metrics.compliantCount}/{metrics.totalFacings} facings ({activeDoor.shelves.length} shelves ×{' '}
+            {activeDoor.facingsPerShelf})
           </div>
         </div>
 
         <div className="glacier-card rounded-lg p-3.5">
-          <div className="text-xs text-[#BAC9CC]">Stock Alerts</div>
+          <div className="text-xs text-[var(--kq-text-secondary)]">Stock Alerts</div>
           <div className="flex items-baseline gap-2 mt-1">
             <span
               className={`text-2xl font-mono-tabular font-bold ${
-                metrics.oosCount > 0 ? 'text-[#FF5A5F]' : 'text-[#10B981]'
+                metrics.oosCount > 0 ? 'text-[var(--kq-crimson)]' : 'text-[var(--kq-emerald)]'
               }`}
             >
               {metrics.oosCount} OOS
             </span>
-            <span className="text-xs font-mono-tabular text-[#FF9F1C]">
+            <span className="text-xs font-mono-tabular text-[var(--kq-amber)] font-semibold">
               · {metrics.lowCount} Low
             </span>
           </div>
-          <div className="text-[11px] text-[#849396] mt-0.5">
+          <div className="text-[11px] text-[var(--kq-text-muted)] mt-0.5">
             {metrics.violationCount > 0
               ? `${metrics.violationCount} misplaced SKU`
               : 'Zero placement violations'}
@@ -395,11 +559,11 @@ export const PlanogramScreen: React.FC<PlanogramScreenProps> = ({
         </div>
 
         <div className="glacier-card rounded-lg p-3.5">
-          <div className="text-xs text-[#BAC9CC]">AI Projected Lift</div>
-          <div className="text-2xl font-mono-tabular font-bold text-[#10B981] mt-1">
+          <div className="text-xs text-[var(--kq-text-secondary)]">AI Projected Lift</div>
+          <div className="text-2xl font-mono-tabular font-bold text-[var(--kq-emerald)] mt-1">
             +${metrics.projectedWeeklyLift}/wk
           </div>
-          <div className="text-[11px] text-[#849396] mt-0.5 font-mono-tabular">
+          <div className="text-[11px] text-[var(--kq-text-muted)] mt-0.5 font-mono-tabular">
             {metrics.aiOpportunityCount} pending facing swaps
           </div>
         </div>
@@ -407,20 +571,20 @@ export const PlanogramScreen: React.FC<PlanogramScreenProps> = ({
 
       {/* Main Split: Cooler Schematic (8 cols) + Inspector (4 cols on desktop) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* Cooler Door Planogram Frame */}
         <div className="lg:col-span-8 glacier-card rounded-xl p-4 sm:p-5">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
             <div>
-              <h2 className="text-base sm:text-lg font-semibold text-[#DCE1FF]">
+              <h2 className="text-base sm:text-lg font-semibold text-[var(--kq-text)]">
                 {activeDoor.label}
               </h2>
-              <p className="text-xs text-[#849396] mt-0.5">
-                Last verified {activeDoor.lastAuditAt} · Tap any facing slot to adjust depth or apply AI swap
+              <p className="text-xs text-[var(--kq-text-muted)] mt-0.5">
+                {HARDWARE_LABELS[activeDoor.hardwareType]} · {activeDoor.shelves.length} shelves ×{' '}
+                {activeDoor.facingsPerShelf} facings ({activeDoor.defaultMaxDepth} deep) · Verified{' '}
+                {activeDoor.lastAuditAt}
               </p>
             </div>
 
-            {/* Filter Segmented Control */}
-            <div className="flex items-center gap-1 p-1 rounded-lg bg-[#0A1128] border border-white/10 self-start">
+            <div className="flex items-center gap-1 p-1 rounded-lg bg-[var(--kq-surface-muted)] border border-[var(--kq-border)] self-start">
               {(
                 [
                   { id: 'all', label: 'All' },
@@ -435,8 +599,8 @@ export const PlanogramScreen: React.FC<PlanogramScreenProps> = ({
                   onClick={() => setFilter(tab.id)}
                   className={`min-h-[36px] px-3 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${
                     filter === tab.id
-                      ? 'bg-[#00E5FF] text-[#0A1128] font-semibold'
-                      : 'text-[#BAC9CC] hover:text-white'
+                      ? 'bg-[var(--kq-accent)] text-[var(--kq-accent-fg)] font-semibold'
+                      : 'text-[var(--kq-text-secondary)] hover:text-[var(--kq-text)]'
                   }`}
                 >
                   {tab.label}
@@ -445,11 +609,11 @@ export const PlanogramScreen: React.FC<PlanogramScreenProps> = ({
             </div>
           </div>
 
-          {/* Refrigerated Glass Vault Interior */}
-          <div className="rounded-xl bg-[#060D24] border border-[#00E5FF]/20 p-3 sm:p-4 space-y-4">
+          {/* Physical Refrigerated Cooler Cabinet Interior (always dark steel casing for realistic beverage contrast) */}
+          <div className="rounded-xl bg-[var(--kq-cabinet)] border border-slate-700/70 p-3 sm:p-4 space-y-4">
             {activeDoor.shelves.map((shelf, shelfIdx) => (
               <div key={shelfIdx} className="space-y-1.5">
-                <div className="flex items-center justify-between text-[11px] font-mono-tabular text-[#849396] px-1">
+                <div className="flex items-center justify-between text-[11px] font-mono-tabular text-slate-400 px-1">
                   <span>
                     SHELF S{shelfIdx + 1}{' '}
                     {shelfIdx === 0 ? '· EYE LEVEL' : shelfIdx === 1 ? '· PRIME REACH' : ''}
@@ -459,36 +623,37 @@ export const PlanogramScreen: React.FC<PlanogramScreenProps> = ({
                   </span>
                 </div>
 
-                {/* 6 Facing Slots Row */}
-                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                {/* Dynamic Facing Columns Matching Door Width */}
+                <div className={`grid gap-2 ${getShelfGridClass(shelf.length)}`}>
                   {shelf.map((slot) => {
-                    const sku = skuCatalog[slot.skuId];
+                    const sku = skuCatalog[slot.skuId] ?? Object.values(skuCatalog)[0];
                     const isSelected = slot.id === selectedSlot?.id;
                     const isOos = slot.currentDepth === 0;
                     const isLow =
-                      !isOos && slot.currentDepth / slot.maxDepth <= settings.lowStockThresholdPct / 100;
+                      !isOos &&
+                      slot.currentDepth / slot.maxDepth <= settings.lowStockThresholdPct / 100;
                     const isViolation = slot.skuId !== slot.plannedSkuId;
                     const hasAi = Boolean(slot.aiRecommendation && !slot.aiRecommendation.applied);
                     const dimmedByFilter = !matchesFilter(slot);
 
                     let slotStyle =
-                      'bg-[#101F42]/80 border-white/10 hover:border-[#00E5FF]/45';
+                      'bg-[var(--kq-cabinet-slot)] border-white/10 hover:border-sky-400/60';
                     if (isOos) {
                       slotStyle =
-                        'bg-[#FF5A5F]/10 border-dashed border-[#FF5A5F]/80 hover:border-[#FF5A5F]';
+                        'bg-rose-500/15 border-dashed border-rose-400/80 hover:border-rose-400';
                     } else if (hasAi) {
                       slotStyle =
-                        'bg-[#10B981]/10 border-[#10B981]/70 hover:border-[#10B981]';
+                        'bg-emerald-500/15 border-emerald-400/70 hover:border-emerald-400';
                     } else if (isViolation) {
                       slotStyle =
-                        'bg-[#FF5A5F]/10 border-[#FF5A5F]/65 hover:border-[#FF5A5F]';
+                        'bg-rose-500/15 border-rose-400/70 hover:border-rose-400';
                     } else if (isLow) {
                       slotStyle =
-                        'bg-[#FF9F1C]/10 border-[#FF9F1C]/70 hover:border-[#FF9F1C]';
+                        'bg-amber-500/15 border-amber-400/70 hover:border-amber-400';
                     }
 
                     if (isSelected) {
-                      slotStyle += ' ring-2 ring-[#00E5FF] ring-offset-1 ring-offset-[#060D24]';
+                      slotStyle += ' ring-2 ring-sky-400 ring-offset-1 ring-offset-[#0F172A]';
                     }
 
                     return (
@@ -500,14 +665,13 @@ export const PlanogramScreen: React.FC<PlanogramScreenProps> = ({
                           dimmedByFilter ? 'opacity-25' : 'opacity-100'
                         }`}
                       >
-                        {/* Top Coordinate + AI Lift Micro-badge */}
                         <div className="w-full flex items-center justify-between gap-1">
-                          <span className="text-[10px] font-mono-tabular text-[#849396]">
+                          <span className="text-[10px] font-mono-tabular text-slate-400">
                             {slot.coord}
                           </span>
                           {hasAi && slot.aiRecommendation ? (
-                            <span className="text-[9px] font-mono-tabular font-bold px-1 py-0.5 rounded bg-[#10B981] text-[#041E14] leading-none">
-                              +{slot.aiRecommendation.projectedLiftPct}% REV
+                            <span className="text-[9px] font-mono-tabular font-bold px-1 py-0.5 rounded bg-emerald-500 text-slate-950 leading-none">
+                              +{slot.aiRecommendation.projectedLiftPct}%
                             </span>
                           ) : (
                             <span
@@ -518,48 +682,45 @@ export const PlanogramScreen: React.FC<PlanogramScreenProps> = ({
                           )}
                         </div>
 
-                        {/* Bottle / Can Visual or OOS Callout */}
                         {isOos ? (
                           <div className="my-auto flex flex-col items-center justify-center py-1">
-                            <span className="text-[10px] font-mono-tabular font-bold text-[#FF5A5F] tracking-tight">
+                            <span className="text-[10px] font-mono-tabular font-bold text-rose-400 tracking-tight">
                               +RESTOCK
                             </span>
-                            <span className="text-[10px] text-[#BAC9CC] truncate max-w-[84px] mt-0.5">
+                            <span className="text-[10px] text-slate-300 truncate max-w-[78px] mt-0.5">
                               {sku.shortName}
                             </span>
                           </div>
                         ) : (
                           <div className="my-1 flex flex-col items-center">
                             <BeverageVisual sku={sku} size="sm" />
-                            <span className="text-[10px] font-medium text-[#DCE1FF] truncate max-w-[86px] mt-1">
+                            <span className="text-[10px] font-medium text-slate-100 truncate max-w-[78px] mt-1">
                               {sku.shortName}
                             </span>
                           </div>
                         )}
 
-                        {/* Bottom Depth Counter */}
-                        <div className="w-full flex items-center justify-between text-[10px] font-mono-tabular pt-1 border-t border-white/5">
+                        <div className="w-full flex items-center justify-between text-[10px] font-mono-tabular pt-1 border-t border-white/10">
                           <span
                             className={
                               isOos
-                                ? 'text-[#FF5A5F] font-semibold'
+                                ? 'text-rose-400 font-semibold'
                                 : isLow
-                                  ? 'text-[#FF9F1C] font-semibold'
+                                  ? 'text-amber-300 font-semibold'
                                   : isViolation
-                                    ? 'text-[#FFB4AB] font-semibold'
-                                    : 'text-[#BAC9CC]'
+                                    ? 'text-rose-300 font-semibold'
+                                    : 'text-slate-300'
                             }
                           >
                             {isViolation ? 'MISPLACED' : `${slot.currentDepth}/${slot.maxDepth}`}
                           </span>
-                          <span className="text-[#849396]">${sku.price.toFixed(2)}</span>
+                          <span className="text-slate-400">${sku.price.toFixed(2)}</span>
                         </div>
                       </button>
                     );
                   })}
                 </div>
 
-                {/* Frosted Glass Cooler Shelf Ledge */}
                 <div className="cooler-shelf-ledge h-2 rounded-sm" aria-hidden="true" />
               </div>
             ))}
@@ -575,14 +736,17 @@ export const PlanogramScreen: React.FC<PlanogramScreenProps> = ({
       {/* Mobile Bottom Sheet Inspector */}
       {mobileSheetOpen && selectedSlot && (
         <div
-          className="lg:hidden fixed inset-0 z-50 flex items-end bg-black/60 backdrop-blur-sm"
+          className="lg:hidden fixed inset-0 z-50 flex items-end bg-slate-950/60 backdrop-blur-sm"
           onClick={() => setMobileSheetOpen(false)}
         >
           <div
-            className="w-full max-h-[84vh] overflow-y-auto glacier-hud rounded-t-2xl border-t border-[#00E5FF]/30 p-5 pb-8"
+            className="w-full max-h-[84vh] overflow-y-auto glacier-hud rounded-t-2xl border-t border-[var(--kq-accent-border)] p-5 pb-8"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="w-10 h-1 rounded-full bg-white/25 mx-auto mb-4" aria-hidden="true" />
+            <div
+              className="w-10 h-1 rounded-full bg-[var(--kq-border-strong)] mx-auto mb-4"
+              aria-hidden="true"
+            />
             {renderInspectorContent(selectedSlot)}
           </div>
         </div>
