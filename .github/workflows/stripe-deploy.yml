@@ -1,0 +1,20 @@
+name: Build and Use Stripe Key
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository code
+        uses: actions/checkout@v4
+
+      - name: Run build or script with Stripe key
+        env:
+          STRIPE_SECRET_KEY: ${{ .github/workflows/stripe-deploy.ymlSTRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }} }}
+        run: |
+          echo "Stripe key is loaded into the environment!"
+          # Replace this line with your build or deploy command (e.g., npm run build)
