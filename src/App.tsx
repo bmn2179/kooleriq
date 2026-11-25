@@ -143,6 +143,12 @@ const DEFAULT_SUBSCRIPTION: SubscriptionState = {
   status: 'active',
 };
 
+const STRIPE_CHECKOUT_ENDPOINT =
+  import.meta.env.VITE_STRIPE_CHECKOUT_ENDPOINT ||
+  (import.meta.env.DEV
+    ? '/api/stripe/create-checkout-session'
+    : 'https://us-central1-graphite-poetry-xxq1s.cloudfunctions.net/createCheckoutSession');
+
 const DEFAULT_ONBOARDING: OnboardingState = {
   completed: false,
   dismissedChecklist: false,
@@ -533,6 +539,29 @@ export default function App() {
     }, 3200);
   }, []);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('stripe_success')) {
+      setActiveTab('orders');
+      showToast('Payment successful. Your Stripe subscription is being activated.');
+      params.delete('stripe_success');
+      params.delete('session_id');
+    } else if (params.has('stripe_canceled')) {
+      setActiveTab('orders');
+      showToast('Checkout canceled. No payment was completed.');
+      params.delete('stripe_canceled');
+    } else {
+      return;
+    }
+
+    const nextSearch = params.toString();
+    window.history.replaceState(
+      null,
+      '',
+      `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`
+    );
+  }, [showToast]);
+
   const appendAuditLog = useCallback(
     (
       category: AuditLogCategory,
@@ -845,18 +874,44 @@ export default function App() {
 
     setIsSavingPlan(true);
     try {
+      if (planTier !== 'starter') {
+        const token = authToken || await authUser.getIdToken();
+        const response = await fetch(STRIPE_CHECKOUT_ENDPOINT, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            planTier,
+            billingCycle,
+            doorQuota,
+            storeCount,
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to start Stripe Checkout.');
+        }
+        if (!result.url) {
+          throw new Error('Stripe did not return a checkout URL.');
+        }
+        window.location.assign(result.url);
+        return;
+      }
+
       const nextSub: SubscriptionState = {
         planTier,
         billingCycle,
         doorQuota,
         storeCount,
-        googlePlayLinked: true,
+        googlePlayLinked: false,
         status: 'active',
       };
       await updateUserSubscriptionInFirestore(authUser.uid, nextSub);
       setSubscription(nextSub);
       showToast(
-        `Activated ${planTier.toUpperCase()} (${billingCycle}) linked to Google Play.`
+        `Activated ${planTier.toUpperCase()} (${billingCycle}).`
       );
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to save plan.');

@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Compare KoolerIQ's published cooler pricing with retail execution and shelf-audit alternatives."
+    />
+    <meta name="theme-color" content="#f5f8fc" />
+    <title>KoolerIQ Pricing &amp; Competitor Comparison</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #10233d;
+        --muted: #64748b;
+        --blue: #087fbd;
+        --line: #e2eaf2;
+        --canvas: #f5f8fc;
+        --green: #0e9f77;
+        font-family: 'DM Sans', sans-serif;
+        font-synthesis: none;
+        text-rendering: optimizeLegibility;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      * { box-sizing: border-box; }
+      body { margin: 0; color: var(--ink); background: var(--canvas); }
+      a { color: inherit; }
+      .wrap { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
+      .topbar { position: sticky; top: 0; z-index: 5; border-bottom: 1px solid var(--line); background: rgb(255 255 255 / 94%); backdrop-filter: blur(14px); }
+      .nav { min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+      .brand { display: inline-flex; align-items: center; gap: 9px; color: var(--ink); text-decoration: none; font: 800 18px 'Plus Jakarta Sans', sans-serif; }
+      .brand-mark { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 10px; color: white; background: linear-gradient(145deg, #18a8d7, #0879b8); }
+      .brand-mark svg { width: 21px; height: 21px; }
+      .nav-links { display: flex; gap: 25px; color: #53647a; font-size: 13px; font-weight: 600; }
+      .nav-links a, .menu-panel a { text-decoration: none; }
+      .nav-links a:hover, .menu-panel a:hover { color: var(--blue); }
+      .mobile-menu { display: none; position: relative; }
+      .mobile-menu summary { list-style: none; cursor: pointer; border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; background: white; font-size: 12px; font-weight: 700; }
+      .mobile-menu summary::-webkit-details-marker { display: none; }
+      .menu-panel { position: absolute; top: calc(100% + 8px); right: 0; width: 190px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; background: white; box-shadow: 0 12px 30px rgb(16 35 61 / 14%); }
+      .menu-panel a { display: block; padding: 10px; border-radius: 7px; color: #53647a; font-size: 12px; }
+      .cta { display: inline-flex; min-height: 42px; align-items: center; justify-content: center; border-radius: 9px; padding: 0 15px; color: white; background: var(--blue); text-decoration: none; font-size: 12px; font-weight: 700; }
+      .cta:hover { background: #05699f; }
+      .hero { padding: 68px 0 52px; background: radial-gradient(ellipse at 75% 20%, rgb(91 193 225 / 14%), transparent 38%), linear-gradient(180deg, #fbfdff, #f2f7fc); }
+      .eyebrow { color: #096f9e; font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
+      h1, h2, h3 { font-family: 'Plus Jakarta Sans', sans-serif; }
+      h1 { max-width: 760px; margin: 14px 0; font-size: clamp(36px, 6vw, 58px); line-height: 1.08; letter-spacing: -2px; }
+      .hero p { max-width: 720px; margin: 0; color: #5a6c81; font-size: 16px; line-height: 1.7; }
+      .section { padding: 46px 0; }
+      .section-heading { margin: 0 0 9px; font-size: 24px; letter-spacing: -.6px; }
+      .section-copy { margin: 0 0 22px; color: var(--muted); line-height: 1.65; }
+      .plan-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+      .plan { padding: 22px; border: 1px solid var(--line); border-radius: 15px; background: white; box-shadow: 0 8px 26px rgb(39 71 104 / 5%); }
+      .plan.featured { border-color: #9bd8e9; box-shadow: 0 12px 32px rgb(8 127 189 / 10%); }
+      .plan h3 { margin: 0; font-size: 17px; }
+      .plan-price { margin: 18px 0 4px; font: 800 30px 'Plus Jakarta Sans', sans-serif; letter-spacing: -1px; }
+      .plan-unit { color: var(--muted); font-size: 12px; }
+      .plan-note { margin: 15px 0 0; color: #52657b; font-size: 13px; line-height: 1.55; }
+      .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: white; }
+      table { width: 100%; min-width: 760px; border-collapse: collapse; text-align: left; }
+      th, td { padding: 16px 18px; border-bottom: 1px solid var(--line); vertical-align: top; }
+      th { color: #53647a; background: #f8fafc; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }
+      td { color: #45586f; font-size: 13px; line-height: 1.55; }
+      td:first-child { color: var(--ink); font-weight: 700; white-space: nowrap; }
+      tr:last-child td { border-bottom: 0; }
+      .price { color: var(--ink); font-weight: 700; }
+      .sources { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; margin: 20px 0 0; padding-left: 20px; color: #53647a; font-size: 12px; line-height: 1.6; }
+      .sources a { color: #087fbd; }
+      .disclosure { margin-top: 20px; padding: 15px 17px; border-left: 3px solid #63bfdc; border-radius: 0 8px 8px 0; background: #eef8fc; color: #52657b; font-size: 12px; line-height: 1.65; }
+      .closing { margin: 10px 0 48px; padding: 28px; border-radius: 16px; background: #10233d; color: white; }
+      .closing h2 { margin: 0 0 8px; font-size: 23px; }
+      .closing p { max-width: 650px; margin: 0 0 18px; color: #c8d4e0; line-height: 1.6; }
+      .closing .cta { background: #18a8d7; }
+      footer { padding: 22px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+      .footer-inner { display: flex; justify-content: space-between; gap: 16px; }
+
+      @media (max-width: 720px) {
+        .wrap { width: min(100% - 32px, 540px); }
+        .nav { min-height: 62px; gap: 10px; }
+        .nav-links { display: none; }
+        .mobile-menu { display: block; }
+        .nav > .cta { min-height: 38px; padding: 0 10px; font-size: 11px; }
+        .hero { padding: 48px 0 38px; }
+        .hero p { font-size: 14px; }
+        .section { padding: 34px 0; }
+        .plan-grid { grid-template-columns: 1fr; }
+        .sources { grid-template-columns: 1fr; }
+        .closing { padding: 23px; }
+        .footer-inner { flex-direction: column; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <nav class="nav wrap" aria-label="Main navigation">
+        <a class="brand" href="/marketing.html#home" aria-label="KoolerIQ home">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M7 3.8h10v16.4H7zM9.5 7h5M9.5 10.5h5M9.5 14h5M9.5 17.5h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 8v8M19 8v8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </span>
+          KoolerIQ
+        </a>
+        <div class="nav-links">
+          <a href="/marketing.html#platform">Platform</a>
+          <a href="/pricing.html" aria-current="page">Pricing</a>
+          <a href="/kooleriq-prototype.html">Live demo</a>
+        </div>
+        <details class="mobile-menu">
+          <summary>Menu <span aria-hidden="true">⌄</span></summary>
+          <div class="menu-panel">
+            <a href="/marketing.html#platform">Platform</a>
+            <a href="/pricing.html" aria-current="page">Pricing</a>
+            <a href="/kooleriq-prototype.html">Live demo</a>
+          </div>
+        </details>
+        <a class="cta" href="mailto:hello@kooleriq.com?subject=KoolerIQ%20pricing">Talk to us</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="wrap">
+          <span class="eyebrow">Clear pricing. Clear comparison.</span>
+          <h1>Compare cooler and retail execution pricing.</h1>
+          <p>See KoolerIQ's configured plans next to published pricing from adjacent retail execution tools. Competitor prices are shown as listed by each vendor; quote-only offers are not estimated.</p>
+        </div>
+      </section>
+
+      <section class="section wrap" aria-labelledby="kooleriq-plans">
+        <h2 class="section-heading" id="kooleriq-plans">KoolerIQ plans</h2>
+        <p class="section-copy">Current plan amounts configured in the KoolerIQ product. Annual rates are billed annually.</p>
+        <div class="plan-grid">
+          <article class="plan">
+            <h3>Starter</h3>
+            <div class="plan-price">Free</div>
+            <div class="plan-unit">per store / month</div>
+            <p class="plan-note">Core cooler planogram mapping and manual restock tracking, with up to 2 cooler doors and 20 AI shelf audits per month.</p>
+          </article>
+          <article class="plan featured">
+            <h3>Pro Operator</h3>
+            <div class="plan-price">$49 <span class="plan-unit">/ door / month</span></div>
+            <div class="plan-unit">$39 / door / month with annual billing</div>
+            <p class="plan-note">For route merchandisers and high-volume stores. Includes AI shelf audits and up to 25 doors per store.</p>
+          </article>
+          <article class="plan">
+            <h3>Enterprise Fleet</h3>
+            <div class="plan-price">$119 <span class="plan-unit">/ store / month</span></div>
+            <div class="plan-unit">$95 / store / month with annual billing</div>
+            <p class="plan-note">For multi-site operators and distributors needing fleet-wide planogram governance and integrations.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section wrap" aria-labelledby="market-pricing">
+        <h2 class="section-heading" id="market-pricing">Competitor pricing at a glance</h2>
+        <p class="section-copy">Rates checked November 25, 2026. Seat, store, and door pricing are different units and should not be treated as a direct quote comparison.</p>
+        <div class="table-wrap">
+          <table>
+            <caption class="visually-hidden">Published pricing and pricing model comparison for KoolerIQ and retail execution alternatives</caption>
+            <thead>
+              <tr>
+                <th scope="col">Product</th>
+                <th scope="col">Published price</th>
+                <th scope="col">Pricing basis</th>
+                <th scope="col">What the vendor lists</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>KoolerIQ</td>
+                <td class="price">Free; Pro from $39; Enterprise from $95</td>
+                <td>Per store or cooler door / month; annual billing for the lower rates</td>
+                <td>Planogram mapping, cooler audits, inventory workflows, and fleet options. See the plan details above.</td>
+              </tr>
+              <tr>
+                <td>GoSpotCheck by FORM</td>
+                <td class="price">$35-$40 / user / month for Essentials</td>
+                <td>Per user / month; 20-user minimum</td>
+                <td>Task management, field photo capture, reporting, and dashboard. Pro and Enterprise are custom-priced; image recognition is an add-on.</td>
+              </tr>
+              <tr>
+                <td>Repsly</td>
+                <td class="price">Request a quote</td>
+                <td>Tiered subscription; 12-month minimum listed</td>
+                <td>Core, Grow, Scale, and Flex packages. ShelfScan image recognition is a separately packaged add-on.</td>
+              </tr>
+              <tr>
+                <td>Trax Retail</td>
+                <td class="price">Request a quote</td>
+                <td>Custom enterprise pricing</td>
+                <td>Retail execution and image recognition; Trax's site directs buyers to contact FORM for a meeting.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="disclosure">
+          Vendor prices and packaging can change. FORM's public overview currently lists GoSpotCheck at $35 per user/month, while its detailed Essentials page lists $40 and a 20-user minimum. Confirm the current quote, billing term, onboarding, taxes, and add-ons directly with each vendor. This comparison is informational and is not an endorsement.
+        </div>
+      </section>
+
+      <section class="section wrap" aria-labelledby="sources">
+        <h2 class="section-heading" id="sources">Pricing sources</h2>
+        <p class="section-copy">Competitor details below link to vendor-published pages. Accessed November 25, 2026.</p>
+        <ul class="sources">
+          <li><a href="https://www.form.com/pricing/" target="_blank" rel="noopener noreferrer">FORM pricing overview</a> - lists GoSpotCheck at $35 per user/month.</li>
+          <li><a href="https://www.form.com/pricing/gospotcheck/" target="_blank" rel="noopener noreferrer">GoSpotCheck detailed pricing</a> - lists Essentials at $40 per user/month and a 20-user minimum.</li>
+          <li><a href="https://www.repsly.com/pricing" target="_blank" rel="noopener noreferrer">Repsly pricing and plans</a> - lists package tiers and contract terms; contact for pricing.</li>
+          <li><a href="https://www.repsly.com/ai/shelf-scan" target="_blank" rel="noopener noreferrer">Repsly ShelfScan</a> - describes the image-recognition add-on and tiered packaging.</li>
+          <li><a href="https://traxretail.com/" target="_blank" rel="noopener noreferrer">Trax Retail</a> and <a href="https://traxretail.com/get-in-touch/" target="_blank" rel="noopener noreferrer">contact page</a> - directs buyers to request a meeting.</li>
+        </ul>
+      </section>
+
+      <section class="wrap closing">
+        <h2>Want a cooler-focused quote?</h2>
+        <p>Tell us how many stores and cooler doors you operate. We can help map the published plan options to your rollout.</p>
+        <a class="cta" href="mailto:hello@kooleriq.com?subject=KoolerIQ%20pricing%20comparison">Contact KoolerIQ</a>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap footer-inner">
+        <a href="/marketing.html#home">KoolerIQ</a>
+        <span>Clearer cooler operations start here.</span>
+        <span>Pricing reviewed November 25, 2026.</span>
+      </div>
+    </footer>
+  </body>
+</html>

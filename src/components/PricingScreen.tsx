@@ -382,7 +382,7 @@ export const PricingScreen: React.FC<PricingScreenProps> = ({
                     ) : (
                       <>
                         <CreditCard className="w-4 h-4" />
-                        Activate {tier.name} via Google Play
+                        {tier.id === 'starter' ? `Activate ${tier.name}` : `Pay securely with Stripe`}
                       </>
                     )}
                   </button>

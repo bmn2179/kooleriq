@@ -3,6 +3,7 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import Stripe from 'stripe';
 import { GoogleGenAI, Type } from '@google/genai';
 import {
   appendChatMessagesForUser,
@@ -16,6 +17,7 @@ import {
 } from './src/db/users.ts';
 import { optionalAuth, requireAuth } from './src/middleware/auth.ts';
 import type { AuthRequest } from './src/middleware/auth.ts';
+import { adminFirestore } from './src/lib/firebase-admin.ts';
 
 dotenv.config();
 
@@ -24,6 +26,114 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
+
+app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  const secretKey = process.env.STRIPE_SECRET_KEY;
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!secretKey || !webhookSecret) {
+    return res.status(503).json({ error: 'Stripe webhook is not configured.' });
+  }
+
+  const stripe = new Stripe(secretKey);
+  let event: Stripe.Event;
+  try {
+    event = stripe.webhooks.constructEvent(
+      req.body,
+      req.headers['stripe-signature'] as string,
+      webhookSecret
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Invalid webhook signature';
+    return res.status(400).send(message);
+  }
+
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object as Stripe.Checkout.Session;
+    const metadata = session.metadata ?? {};
+    const uid = metadata.firebaseUid;
+    const planTier = metadata.planTier;
+    const billingCycle = metadata.billingCycle;
+    const doorQuota = Number(metadata.doorQuota);
+    const storeCount = Number(metadata.storeCount);
+
+    if (
+      uid &&
+      ['starter', 'pro', 'enterprise'].includes(planTier) &&
+      ['monthly', 'annual'].includes(billingCycle)
+    ) {
+      try {
+        await adminFirestore.doc(`users/${uid}`).set({
+          planTier,
+          billingCycle,
+          doorQuota: Math.max(1, Math.min(500, doorQuota || 2)),
+          storeCount: Math.max(1, Math.min(200, storeCount || 1)),
+          googlePlayLinked: false,
+          subscriptionStatus: 'active',
+          stripeCustomerId: typeof session.customer === 'string' ? session.customer : null,
+          stripeSubscriptionId:
+            typeof session.subscription === 'string' ? session.subscription : null,
+          updatedAt: new Date(),
+        }, { merge: true });
+      } catch (error) {
+        console.error('Stripe checkout fulfillment error:', error);
+        return res.status(500).json({ error: 'Failed to fulfill subscription.' });
+      }
+    }
+  }
+
+  if (
+    event.type === 'customer.subscription.updated' ||
+    event.type === 'customer.subscription.deleted'
+  ) {
+    const subscription = event.data.object as Stripe.Subscription;
+    const uid = subscription.metadata?.firebaseUid;
+    if (uid) {
+      const status =
+        event.type === 'customer.subscription.deleted'
+          ? 'canceled'
+          : subscription.status;
+      try {
+        await adminFirestore.doc(`users/${uid}`).set(
+          { subscriptionStatus: status, updatedAt: new Date() },
+          { merge: true }
+        );
+      } catch (error) {
+        console.error('Stripe subscription lifecycle update error:', error);
+        return res.status(500).json({ error: 'Failed to update subscription status.' });
+      }
+    }
+  }
+
+  if (
+    event.type === 'invoice.paid' ||
+    event.type === 'invoice.payment_failed'
+  ) {
+    const invoice = event.data.object as Stripe.Invoice;
+    const subscriptionRef = invoice.parent?.subscription_details?.subscription;
+    const subscriptionId =
+      typeof subscriptionRef === 'string'
+        ? subscriptionRef
+        : subscriptionRef?.id;
+    if (subscriptionId) {
+      try {
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        const uid = subscription.metadata?.firebaseUid;
+        if (uid) {
+          const status = event.type === 'invoice.paid' ? 'active' : 'past_due';
+          await adminFirestore.doc(`users/${uid}`).set(
+            { subscriptionStatus: status, updatedAt: new Date() },
+            { merge: true }
+          );
+        }
+      } catch (error) {
+        console.error('Stripe invoice lifecycle update error:', error);
+        return res.status(500).json({ error: 'Failed to update invoice status.' });
+      }
+    }
+  }
+
+  res.json({ received: true });
+});
 
 app.use(express.json({ limit: '8mb' }));
 app.use((_req, res, next) => {
@@ -192,6 +302,77 @@ app.put('/api/subscription', requireAuth, async (req: AuthRequest, res) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to update subscription';
     res.status(500).json({ error: message });
+  }
+});
+
+// Create a Stripe Checkout subscription for a paid KoolerIQ plan
+app.post('/api/stripe/create-checkout-session', requireAuth, async (req: AuthRequest, res) => {
+  const secretKey = process.env.STRIPE_SECRET_KEY;
+  if (!secretKey) {
+    return res.status(503).json({
+      error: 'Stripe is not configured. Set STRIPE_SECRET_KEY in Settings > Secrets.',
+    });
+  }
+
+  const { planTier, billingCycle, doorQuota, storeCount } = req.body ?? {};
+  if (!['pro', 'enterprise'].includes(planTier) || !['monthly', 'annual'].includes(billingCycle)) {
+    return res.status(400).json({ error: 'A paid plan tier and billing cycle are required.' });
+  }
+
+  const parsedDoors = Math.max(1, Math.min(25, Number(doorQuota) || 4));
+  const parsedStores = Math.max(1, Math.min(200, Number(storeCount) || 1));
+  const monthlyUnitPrice =
+    planTier === 'pro'
+      ? (billingCycle === 'annual' ? 39 : 49)
+      : (billingCycle === 'annual' ? 95 : 119);
+  const quantity = planTier === 'pro' ? parsedDoors * parsedStores : parsedStores;
+  const interval = billingCycle === 'annual' ? 'year' : 'month';
+  const unitAmount =
+    interval === 'year' ? monthlyUnitPrice * 12 * 100 : monthlyUnitPrice * 100;
+  const appUrl = (process.env.APP_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
+
+  try {
+    const stripe = new Stripe(secretKey);
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      customer_email: req.user!.email,
+      line_items: [
+        {
+          quantity,
+          price_data: {
+            currency: 'usd',
+            unit_amount: unitAmount,
+            recurring: { interval },
+            product_data: {
+              name: `KoolerIQ ${planTier === 'pro' ? 'Pro Operator' : 'Enterprise Fleet'}`,
+              metadata: { planTier, billingCycle },
+            },
+          },
+        },
+      ],
+      success_url: `${appUrl}/orders?stripe_success=1&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${appUrl}/orders?stripe_canceled=1`,
+      metadata: {
+        firebaseUid: req.user!.uid,
+        planTier,
+        billingCycle,
+        doorQuota: String(parsedDoors),
+        storeCount: String(parsedStores),
+      },
+      subscription_data: {
+        metadata: {
+          firebaseUid: req.user!.uid,
+          planTier,
+          billingCycle,
+        },
+      },
+    });
+
+    res.json({ url: session.url });
+  } catch (error) {
+    console.error('Stripe checkout session error:', error);
+    const message = error instanceof Error ? error.message : 'Failed to create Stripe checkout.';
+    res.status(502).json({ error: message });
   }
 });
 
