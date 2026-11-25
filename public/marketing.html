@@ -49,7 +49,7 @@
         border-bottom: 1px solid rgb(226 234 242 / 80%);
         backdrop-filter: blur(16px);
       }
-      .nav { height: 100%; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+      .nav { position: relative; height: 100%; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
       .brand { display: inline-flex; align-items: center; gap: 10px; font: 800 19px 'Plus Jakarta Sans', sans-serif; letter-spacing: -.7px; }
       .brand-mark {
         width: 34px; height: 34px; display: grid; place-items: center; color: white;
@@ -222,7 +222,29 @@
       .footer-brand .brand-mark svg { width: 16px; height: 16px; }
       .reveal { opacity: 0; transform: translateY(18px); transition: opacity .65s ease, transform .65s cubic-bezier(.16, 1, .3, 1); }
       .reveal.visible { opacity: 1; transform: translateY(0); }
-      .mobile-menu { display: none; }
+      .mobile-menu { display: none; position: relative; }
+      .mobile-menu summary {
+        min-height: 39px; display: inline-flex; align-items: center; gap: 6px;
+        padding: 0 10px; border: 1px solid var(--line); border-radius: 9px;
+        background: white; color: var(--ink); cursor: pointer; font-size: 11px; font-weight: 700;
+        list-style: none;
+      }
+      .mobile-menu summary::-webkit-details-marker { display: none; }
+      .mobile-menu[open] summary { color: var(--blue); border-color: #b7ddec; }
+      .mobile-menu-panel {
+        position: absolute; top: calc(100% + 8px); right: 0; z-index: 22;
+        width: min(220px, calc(100vw - 32px)); padding: 6px;
+        border: 1px solid var(--line); border-radius: 12px; background: white;
+        box-shadow: 0 14px 32px rgb(16 35 61 / 14%);
+      }
+      .mobile-menu-panel a {
+        display: block; padding: 11px 12px; border-radius: 8px;
+        color: #53647a; font-size: 12px; font-weight: 600;
+      }
+      .mobile-menu-panel a:hover, .mobile-menu-panel a:focus-visible {
+        color: var(--blue); background: #f2f8fc; outline: none;
+      }
+      .nav-cta-compact { display: none; }
 
       @keyframes drift { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-13px); } }
       @keyframes float { 0%,100% { translate: 0 0; } 50% { translate: 0 -9px; } }
@@ -249,7 +271,10 @@
         .wrap { width: min(100% - 32px, 500px); }
         .topbar { height: 64px; }
         .nav-links { display: none; }
-        .nav-cta { min-height: 39px; padding: 0 12px; font-size: 11px; }
+        .mobile-menu { display: block; }
+        .nav-cta { min-height: 39px; padding: 0 9px; font-size: 10px; }
+        .nav-cta-full { display: none; }
+        .nav-cta-compact { display: inline; }
         .hero { padding: 52px 0 42px; }
         h1 { font-size: clamp(42px, 11vw, 56px); letter-spacing: -2.4px; }
         .hero-copy { font-size: 14px; }
@@ -302,7 +327,18 @@
             <a href="#platform">Platform</a>
             <a href="#how-it-works">How it works</a>
           </div>
-          <a class="nav-cta" href="/kooleriq-prototype.html">Explore the live demo <span aria-hidden="true">→</span></a>
+          <details class="mobile-menu">
+            <summary>Menu <span aria-hidden="true">⌄</span></summary>
+            <div class="mobile-menu-panel">
+              <a href="#platform">Platform</a>
+              <a href="#how-it-works">How it works</a>
+            </div>
+          </details>
+          <a class="nav-cta" href="/kooleriq-prototype.html">
+            <span class="nav-cta-full">Explore the live demo</span>
+            <span class="nav-cta-compact">Try demo</span>
+            <span aria-hidden="true">→</span>
+          </a>
         </nav>
       </header>
 
@@ -447,6 +483,12 @@
     </div>
     <script>
       document.getElementById('year').textContent = new Date().getFullYear();
+      document.querySelectorAll('.mobile-menu-panel a').forEach((link) => {
+        link.addEventListener('click', () => {
+          const menu = link.closest('.mobile-menu');
+          if (menu) menu.open = false;
+        });
+      });
       const revealObserver = new IntersectionObserver((entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
