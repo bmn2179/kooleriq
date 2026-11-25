@@ -363,26 +363,6 @@ export async function updateUserPreferencesInFirestore(
   }
 }
 
-export async function updateUserSubscriptionInFirestore(
-  userId: string,
-  subscription: SubscriptionState
-): Promise<void> {
-  const path = `users/${userId}`;
-  try {
-    await updateDoc(doc(db, 'users', userId), {
-      planTier: subscription.planTier,
-      billingCycle: subscription.billingCycle,
-      doorQuota: Math.max(1, Math.min(500, Number(subscription.doorQuota) || 2)),
-      storeCount: Math.max(1, Math.min(200, Number(subscription.storeCount) || 1)),
-      googlePlayLinked: Boolean(subscription.googlePlayLinked),
-      subscriptionStatus: 'active',
-      updatedAt: serverTimestamp(),
-    });
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
-  }
-}
-
 export async function upsertStoreInFirestore(
   userId: string,
   store: StoreProfile,
@@ -694,6 +674,8 @@ export function subscribeToUserWorkspace(
   }
 ): Unsubscribe {
   const unsubs: Unsubscribe[] = [];
+  const workspaceSubscriptions: Array<() => Unsubscribe> = [];
+  let activeWorkspaceUnsubs: Unsubscribe[] = [];
 
   // 1. User workspace root doc
   const userPath = `users/${userId}`;
@@ -721,6 +703,16 @@ export function subscribeToUserWorkspace(
             status: String(d.subscriptionStatus || 'active'),
           },
         });
+
+        const hasPaidAccess =
+          ['pro', 'enterprise'].includes(d.planTier) &&
+          ['active', 'trialing'].includes(d.subscriptionStatus);
+        if (hasPaidAccess && activeWorkspaceUnsubs.length === 0) {
+          activeWorkspaceUnsubs = workspaceSubscriptions.map((subscribe) => subscribe());
+        } else if (!hasPaidAccess && activeWorkspaceUnsubs.length > 0) {
+          activeWorkspaceUnsubs.forEach((unsubscribe) => unsubscribe());
+          activeWorkspaceUnsubs = [];
+        }
       },
       (error) => handleFirestoreError(error, OperationType.GET, userPath)
     )
@@ -728,7 +720,7 @@ export function subscribeToUserWorkspace(
 
   // 2. Stores subcollection
   const storesPath = `users/${userId}/stores`;
-  unsubs.push(
+  workspaceSubscriptions.push(() =>
     onSnapshot(
       query(collection(db, 'users', userId, 'stores'), where('ownerId', '==', userId)),
       (snap) => {
@@ -754,7 +746,7 @@ export function subscribeToUserWorkspace(
 
   // 3. Custom SKUs & inventory overrides
   const skusPath = `users/${userId}/customSkus`;
-  unsubs.push(
+  workspaceSubscriptions.push(() =>
     onSnapshot(
       query(collection(db, 'users', userId, 'customSkus'), where('ownerId', '==', userId)),
       (snap) => {
@@ -794,7 +786,7 @@ export function subscribeToUserWorkspace(
 
   // 4. Distributor Orders
   const ordersPath = `users/${userId}/orders`;
-  unsubs.push(
+  workspaceSubscriptions.push(() =>
     onSnapshot(
       query(collection(db, 'users', userId, 'orders'), where('ownerId', '==', userId), limit(60)),
       (snap) => {
@@ -825,7 +817,7 @@ export function subscribeToUserWorkspace(
 
   // 5. Audit Logs
   const auditLogsPath = `users/${userId}/auditLogs`;
-  unsubs.push(
+  workspaceSubscriptions.push(() =>
     onSnapshot(
       query(collection(db, 'users', userId, 'auditLogs'), where('ownerId', '==', userId), limit(150)),
       (snap) => {
@@ -854,7 +846,7 @@ export function subscribeToUserWorkspace(
 
   // 6. Notifications
   const notifsPath = `users/${userId}/notifications`;
-  unsubs.push(
+  workspaceSubscriptions.push(() =>
     onSnapshot(
       query(
         collection(db, 'users', userId, 'notifications'),
@@ -888,7 +880,7 @@ export function subscribeToUserWorkspace(
 
   // 7. Media Assets
   const mediaPath = `users/${userId}/mediaAssets`;
-  unsubs.push(
+  workspaceSubscriptions.push(() =>
     onSnapshot(
       query(
         collection(db, 'users', userId, 'mediaAssets'),
@@ -923,7 +915,7 @@ export function subscribeToUserWorkspace(
 
   // 8. Chat Messages
   const chatsPath = `users/${userId}/chats`;
-  unsubs.push(
+  workspaceSubscriptions.push(() =>
     onSnapshot(
       query(collection(db, 'users', userId, 'chats'), where('ownerId', '==', userId), limit(80)),
       (snap) => {
@@ -948,5 +940,6 @@ export function subscribeToUserWorkspace(
 
   return () => {
     unsubs.forEach((u) => u());
+    activeWorkspaceUnsubs.forEach((u) => u());
   };
 }

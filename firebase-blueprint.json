@@ -57,7 +57,7 @@
         },
         "subscriptionStatus": {
           "type": "string",
-          "enum": ["active", "trialing", "paused"],
+          "enum": ["active", "trialing", "paused", "past_due", "canceled", "incomplete", "incomplete_expired", "unpaid"],
           "maxLength": 20
         },
         "createdAt": {

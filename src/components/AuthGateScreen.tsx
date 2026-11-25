@@ -82,11 +82,11 @@ export const AuthGateScreen: React.FC<AuthGateScreenProps> = ({
               <span>PROTECTED STORE WORKSPACE · {activeModule.label.toUpperCase()} LOCKED</span>
             </div>
             <h2 className="text-xl sm:text-2xl font-display font-bold tracking-tight text-[var(--kq-text)]">
-              Sign in with Google to Unlock KoolerIQ
+              Sign in to choose your KoolerIQ plan
             </h2>
             <p className="text-xs sm:text-sm text-[var(--kq-text-secondary)] max-w-xl leading-relaxed">
-              Dashboard, Inventory, Scan Hub, Orders, and Reports are secured by Firebase
-              Authentication and synced in real time to your private Cloud Firestore database.
+              Sign in with Google, then choose a Pro or Enterprise plan and complete Stripe checkout.
+              Your live dashboard stays locked until payment is confirmed.
             </p>
           </div>
           <div className="shrink-0 hidden sm:block">
@@ -159,7 +159,7 @@ export const AuthGateScreen: React.FC<AuthGateScreenProps> = ({
               className="min-h-[46px] px-6 py-2.5 rounded-xl bg-[var(--kq-accent)] text-[var(--kq-accent-fg)] text-sm font-semibold hover:bg-[var(--kq-accent-hover)] disabled:opacity-60 transition-colors inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 shadow-sm"
             >
               <LogIn className="w-4 h-4" />
-              {isSigningIn ? 'Signing in...' : 'Sign in with Google to Unlock'}
+              {isSigningIn ? 'Signing in...' : 'Sign in with Google to Choose a Plan'}
             </button>
           </div>
         </div>

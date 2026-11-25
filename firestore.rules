@@ -35,6 +35,13 @@ service cloud.firestore {
       return isVerifiedUser() && request.auth.uid == userId;
     }
 
+    function isPaidOwner(userId) {
+      return isOwner(userId) &&
+        exists(/databases/$(database)/documents/users/$(userId)) &&
+        get(/databases/$(database)/documents/users/$(userId)).data.planTier in ['pro', 'enterprise'] &&
+        get(/databases/$(database)/documents/users/$(userId)).data.subscriptionStatus in ['active', 'trialing'];
+    }
+
     function parentUserRootExists(userId) {
       return exists(/databases/$(database)/documents/users/$(userId)) ||
         existsAfter(/databases/$(database)/documents/users/$(userId));
@@ -104,7 +111,7 @@ service cloud.firestore {
         data.storeCount <= 200 &&
         data.googlePlayLinked is bool &&
         data.subscriptionStatus is string &&
-        data.subscriptionStatus in ['active', 'trialing', 'paused'] &&
+        data.subscriptionStatus in ['active', 'trialing', 'paused', 'past_due', 'canceled', 'incomplete', 'incomplete_expired', 'unpaid'] &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
     }
@@ -520,6 +527,7 @@ service cloud.firestore {
       allow create: if isValidId(userId) &&
         isVerifiedOwner(userId) &&
         isValidUserWorkspaceRoot(incoming(), userId) &&
+        incoming().planTier == 'starter' &&
         incoming().createdAt == request.time &&
         incoming().updatedAt == request.time;
       allow update: if isValidId(userId) &&
@@ -536,15 +544,6 @@ service cloud.firestore {
             'onboardingCompleted',
             'dismissedChecklist',
             'completedSteps',
-            'updatedAt'
-          ]) ||
-          incoming().diff(existing()).affectedKeys().hasOnly([
-            'planTier',
-            'billingCycle',
-            'doorQuota',
-            'storeCount',
-            'googlePlayLinked',
-            'subscriptionStatus',
             'updatedAt'
           ])
         );
@@ -574,8 +573,8 @@ service cloud.firestore {
 
       // 3. Stores (per-store cooler layouts, facings, audits, settings)
       match /stores/{storeId} {
-        allow get: if isValidId(userId) && isValidId(storeId) && isOwner(userId);
-        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow get: if isValidId(userId) && isValidId(storeId) && isPaidOwner(userId);
+        allow list: if isPaidOwner(userId) && existing().ownerId == request.auth.uid;
         allow create: if isValidId(userId) &&
           isValidId(storeId) &&
           isVerifiedOwner(userId) &&
@@ -610,8 +609,8 @@ service cloud.firestore {
 
       // 4. Custom & Modified Beverage SKUs
       match /customSkus/{skuId} {
-        allow get: if isValidId(userId) && isValidId(skuId) && isOwner(userId);
-        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow get: if isValidId(userId) && isValidId(skuId) && isPaidOwner(userId);
+        allow list: if isPaidOwner(userId) && existing().ownerId == request.auth.uid;
         allow create: if isValidId(userId) &&
           isValidId(skuId) &&
           isVerifiedOwner(userId) &&
@@ -656,8 +655,8 @@ service cloud.firestore {
 
       // 5. Distributor Purchase Orders (with terminal 'received' locking)
       match /orders/{orderId} {
-        allow get: if isValidId(userId) && isValidId(orderId) && isOwner(userId);
-        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow get: if isValidId(userId) && isValidId(orderId) && isPaidOwner(userId);
+        allow list: if isPaidOwner(userId) && existing().ownerId == request.auth.uid;
         allow create: if isValidId(userId) &&
           isValidId(orderId) &&
           isVerifiedOwner(userId) &&
@@ -679,8 +678,8 @@ service cloud.firestore {
 
       // 6. Append-Only Operational Audit Log
       match /auditLogs/{entryId} {
-        allow get: if isValidId(userId) && isValidId(entryId) && isOwner(userId);
-        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow get: if isValidId(userId) && isValidId(entryId) && isPaidOwner(userId);
+        allow list: if isPaidOwner(userId) && existing().ownerId == request.auth.uid;
         allow create: if isValidId(userId) &&
           isValidId(entryId) &&
           isVerifiedOwner(userId) &&
@@ -693,8 +692,8 @@ service cloud.firestore {
 
       // 7. Notification Center Items
       match /notifications/{notifId} {
-        allow get: if isValidId(userId) && isValidId(notifId) && isOwner(userId);
-        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow get: if isValidId(userId) && isValidId(notifId) && isPaidOwner(userId);
+        allow list: if isPaidOwner(userId) && existing().ownerId == request.auth.uid;
         allow create: if isValidId(userId) &&
           isValidId(notifId) &&
           isVerifiedOwner(userId) &&
@@ -715,8 +714,8 @@ service cloud.firestore {
 
       // 8. Image Library Assets
       match /mediaAssets/{assetId} {
-        allow get: if isValidId(userId) && isValidId(assetId) && isOwner(userId);
-        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow get: if isValidId(userId) && isValidId(assetId) && isPaidOwner(userId);
+        allow list: if isPaidOwner(userId) && existing().ownerId == request.auth.uid;
         allow create: if isValidId(userId) &&
           isValidId(assetId) &&
           isVerifiedOwner(userId) &&
@@ -729,8 +728,8 @@ service cloud.firestore {
 
       // 9. Copilot & Search Grounding Chat Messages
       match /chats/{messageId} {
-        allow get: if isValidId(userId) && isValidId(messageId) && isOwner(userId);
-        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow get: if isValidId(userId) && isValidId(messageId) && isPaidOwner(userId);
+        allow list: if isPaidOwner(userId) && existing().ownerId == request.auth.uid;
         allow create: if isValidId(userId) &&
           isValidId(messageId) &&
           isVerifiedOwner(userId) &&

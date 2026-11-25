@@ -35,6 +35,7 @@ import {
 } from './components/OnboardingFlow';
 import { OrdersScreen } from './components/OrdersScreen';
 import { PlanogramScreen } from './components/PlanogramScreen';
+import { PricingScreen } from './components/PricingScreen';
 import { PrototypePreviewModal } from './components/PrototypePreviewModal';
 import { ReportsScreen } from './components/ReportsScreen';
 import { ScanHubScreen } from './components/ScanHubScreen';
@@ -67,7 +68,6 @@ import {
   saveMediaAssetToFirestore,
   subscribeToUserWorkspace,
   updateUserPreferencesInFirestore,
-  updateUserSubscriptionInFirestore,
   upsertCustomSkuInFirestore,
   upsertStoreInFirestore,
   WorkspaceCreatedAtCache,
@@ -142,6 +142,13 @@ const DEFAULT_SUBSCRIPTION: SubscriptionState = {
   googlePlayLinked: true,
   status: 'active',
 };
+
+function hasPaidSubscription(subscription: SubscriptionState): boolean {
+  return (
+    (subscription.planTier === 'pro' || subscription.planTier === 'enterprise') &&
+    (subscription.status === 'active' || subscription.status === 'trialing')
+  );
+}
 
 const STRIPE_CHECKOUT_ENDPOINT =
   import.meta.env.VITE_STRIPE_CHECKOUT_ENDPOINT ||
@@ -542,12 +549,12 @@ export default function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.has('stripe_success')) {
-      setActiveTab('orders');
-      showToast('Payment successful. Your Stripe subscription is being activated.');
+      setActiveTab('dashboard');
+      showToast('Checking your subscription status...');
       params.delete('stripe_success');
       params.delete('session_id');
     } else if (params.has('stripe_canceled')) {
-      setActiveTab('orders');
+      setActiveTab('dashboard');
       showToast('Checkout canceled. No payment was completed.');
       params.delete('stripe_canceled');
     } else {
@@ -672,6 +679,7 @@ export default function App() {
             setActiveStoreId(nextActiveId);
             setOnboarding(nextOnboarding);
             setSubscription(data.subscription);
+            firestoreReadyRef.current = hasPaidSubscription(data.subscription);
           },
           onStores: (cloudStores) => {
             if (cloudStores.length === 0) return;
@@ -725,7 +733,6 @@ export default function App() {
           },
         });
 
-        firestoreReadyRef.current = true;
       } catch (err) {
         if (!active) return;
         const msg = err instanceof Error ? err.message : 'Unable to initialize cloud workspace.';
@@ -872,47 +879,35 @@ export default function App() {
       return;
     }
 
+    if (planTier === 'starter') {
+      showToast('Starter is a free preview and does not unlock the dashboard. Choose Pro or Enterprise.');
+      return;
+    }
+
     setIsSavingPlan(true);
     try {
-      if (planTier !== 'starter') {
-        const token = authToken || await authUser.getIdToken();
-        const response = await fetch(STRIPE_CHECKOUT_ENDPOINT, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            planTier,
-            billingCycle,
-            doorQuota,
-            storeCount,
-          }),
-        });
-        const result = await response.json();
-        if (!response.ok) {
-          throw new Error(result.error || 'Failed to start Stripe Checkout.');
-        }
-        if (!result.url) {
-          throw new Error('Stripe did not return a checkout URL.');
-        }
-        window.location.assign(result.url);
-        return;
+      const token = authToken || await authUser.getIdToken();
+      const response = await fetch(STRIPE_CHECKOUT_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          planTier,
+          billingCycle,
+          doorQuota,
+          storeCount,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to start Stripe Checkout.');
       }
-
-      const nextSub: SubscriptionState = {
-        planTier,
-        billingCycle,
-        doorQuota,
-        storeCount,
-        googlePlayLinked: false,
-        status: 'active',
-      };
-      await updateUserSubscriptionInFirestore(authUser.uid, nextSub);
-      setSubscription(nextSub);
-      showToast(
-        `Activated ${planTier.toUpperCase()} (${billingCycle}).`
-      );
+      if (!result.url) {
+        throw new Error('Stripe did not return a checkout URL.');
+      }
+      window.location.assign(result.url);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to save plan.');
     } finally {
@@ -2484,7 +2479,9 @@ export default function App() {
     () => new Set<NavTab>(['dashboard', 'inventory', 'scan', 'orders', 'reports']),
     []
   );
-  const isWorkspaceLocked = !authUser && lockedTabs.has(activeTab);
+  const isWorkspaceLocked = !authUser;
+  const hasDashboardAccess = Boolean(authUser && hasPaidSubscription(subscription));
+  const isSubscriptionLocked = Boolean(authUser && !hasPaidSubscription(subscription));
 
   const requireSignedInAction = useCallback(
     (fn: () => void) => {
@@ -2493,9 +2490,14 @@ export default function App() {
         void handleGoogleSignIn();
         return;
       }
+      if (!hasPaidSubscription(subscription)) {
+        showToast('Choose a Pro or Enterprise plan to unlock workspace tools.');
+        setActiveTab('dashboard');
+        return;
+      }
       fn();
     },
-    [authUser, showToast]
+    [authUser, showToast, subscription]
   );
 
   if (fatalBoundaryError) {
@@ -2520,7 +2522,7 @@ export default function App() {
             {desktopNavItems.map((item) => {
               const isActive = activeTab === item.id;
               const isCenterScan = item.id === 'scan';
-              const isTabLocked = !authUser && lockedTabs.has(item.id);
+              const isTabLocked = !hasDashboardAccess && lockedTabs.has(item.id);
 
               if (isCenterScan) {
                 return (
@@ -2536,6 +2538,15 @@ export default function App() {
                   >
                     {isTabLocked ? (
                       <Lock className="w-3.5 h-3.5" />
+                    ) : !hasDashboardAccess ? (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('dashboard')}
+                        className="min-h-[40px] px-4 py-2 rounded-lg bg-[var(--kq-accent)] text-[var(--kq-accent-fg)] text-xs font-semibold hover:bg-[var(--kq-accent-hover)] transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                      >
+                        <Lock className="w-4 h-4" />
+                        Choose a paid plan
+                      </button>
                     ) : (
                       <ScanBarcode className="w-4 h-4" />
                     )}
@@ -2608,7 +2619,7 @@ export default function App() {
             </div>
 
             <div className="text-xs text-[var(--kq-text-muted)] flex flex-wrap items-center gap-2">
-              {authUser ? (
+              {authUser && hasDashboardAccess ? (
                 <>
                   <span className="font-mono-tabular text-[var(--kq-text-secondary)]">
                     {activeStore.layoutTemplate}
@@ -2622,10 +2633,15 @@ export default function App() {
                     {planDisplayName} · Firestore Synced
                   </span>
                 </>
+              ) : authUser ? (
+                <span className="font-mono-tabular text-[var(--kq-amber)] inline-flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5" />
+                  Sign in complete · payment required for dashboard access
+                </span>
               ) : (
                 <span className="font-mono-tabular text-[var(--kq-text-secondary)] inline-flex items-center gap-1.5">
                   <Lock className="w-3.5 h-3.5 text-[var(--kq-accent)]" />
-                  Dashboard, Inventory, Scan Hub, Orders &amp; Reports locked until Google Sign-In
+                  Live dashboard locked until a paid plan is active
                 </span>
               )}
               <span aria-hidden="true">·</span>
@@ -2637,7 +2653,7 @@ export default function App() {
 
           {/* Store Selector + Copilot + Theme + Settings + Auth */}
           <div className="flex items-center gap-2 flex-wrap">
-            {authUser && (
+            {authUser && hasDashboardAccess && (
               <>
                 {/* Multi-Store Switcher */}
                 <div className="flex items-center gap-1.5 bg-[var(--kq-surface)] border border-[var(--kq-border-strong)] rounded-lg px-2.5 min-h-[40px]">
@@ -2801,7 +2817,7 @@ export default function App() {
           </div>
         </div>
 
-        {authUser && (
+        {authUser && hasDashboardAccess && (
           <OnboardingChecklistBanner
             onboarding={onboarding}
             isSignedIn={Boolean(authUser)}
@@ -2831,7 +2847,7 @@ export default function App() {
           </div>
         )}
 
-        {authLoading && lockedTabs.has(activeTab) ? (
+        {authLoading ? (
           <div className="py-16 flex items-center justify-center">
             <div className="glacier-card rounded-xl px-6 py-5 text-xs font-mono-tabular text-[var(--kq-text-secondary)]">
               Verifying Google authentication &amp; Firestore session...
@@ -2845,9 +2861,27 @@ export default function App() {
             onSignIn={handleGoogleSignIn}
             onOpenPrototype={() => setPrototypeOpen(true)}
           />
+        ) : isSubscriptionLocked ? (
+          <div className="space-y-5">
+            <div className="glacier-card rounded-xl border border-[var(--kq-accent-border)] p-5">
+              <h2 className="text-lg font-semibold text-[var(--kq-text)]">
+                A paid plan is required to unlock the dashboard
+              </h2>
+              <p className="mt-1 text-sm text-[var(--kq-text-secondary)]">
+                Choose Pro or Enterprise and complete Stripe checkout. Dashboard access unlocks after payment is confirmed.
+              </p>
+            </div>
+            <PricingScreen
+              subscription={subscription}
+              isAuthenticated
+              isSaving={isSavingPlan}
+              onSelectPlan={handleSelectPlan}
+              onSignInPrompt={handleGoogleSignIn}
+            />
+          </div>
         ) : null}
 
-        {!authLoading && authUser && activeTab === 'dashboard' && (
+        {!authLoading && hasDashboardAccess && activeTab === 'dashboard' && (
           <>
             <PlanogramScreen
               doors={doors}
@@ -2902,7 +2936,7 @@ export default function App() {
           </>
         )}
 
-        {!authLoading && authUser && activeTab === 'inventory' && (
+        {!authLoading && hasDashboardAccess && activeTab === 'inventory' && (
           <InventoryScreen
             doors={doors}
             skuCatalog={skuCatalog}
@@ -2929,7 +2963,7 @@ export default function App() {
           />
         )}
 
-        {!authLoading && authUser && activeTab === 'scan' && (
+        {!authLoading && hasDashboardAccess && activeTab === 'scan' && (
           <ScanHubScreen
             doors={doors}
             selectedDoorId={selectedDoorId}
@@ -2950,7 +2984,7 @@ export default function App() {
           />
         )}
 
-        {!authLoading && authUser && activeTab === 'orders' && (
+        {!authLoading && hasDashboardAccess && activeTab === 'orders' && (
           <OrdersScreen
             doors={doors}
             skuCatalog={skuCatalog}
@@ -2975,7 +3009,7 @@ export default function App() {
           />
         )}
 
-        {!authLoading && authUser && activeTab === 'reports' && (
+        {!authLoading && hasDashboardAccess && activeTab === 'reports' && (
           <ReportsScreen
             doors={doors}
             insights={insights}
@@ -3004,7 +3038,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'settings' && (
+        {hasDashboardAccess && activeTab === 'settings' && (
           <SettingsScreen
             settings={settings}
             doors={doors}
@@ -3039,24 +3073,26 @@ export default function App() {
       </main>
 
       {/* Quiet Desktop Footer */}
-      <footer className="hidden lg:block border-t border-[var(--kq-border)] py-4 px-6">
-        <div className="max-w-[1440px] mx-auto flex items-center justify-between text-xs text-[var(--kq-text-muted)]">
-          <span>KoolerIQ Cold-Chain Telemetry · www.kooleriq.com · Available on Google Play</span>
-          <span>
-            {settings.storeName} · Route {settings.routeId}
-          </span>
-        </div>
-      </footer>
+      {hasDashboardAccess && (
+        <footer className="hidden lg:block border-t border-[var(--kq-border)] py-4 px-6">
+          <div className="max-w-[1440px] mx-auto flex items-center justify-between text-xs text-[var(--kq-text-muted)]">
+            <span>KoolerIQ Cold-Chain Telemetry · www.kooleriq.com · Available on Google Play</span>
+            <span>
+              {settings.storeName} · Route {settings.routeId}
+            </span>
+          </div>
+        </footer>
+      )}
 
       {/* Store & Cooler Layout Modals */}
       <CreateStoreModal
-        open={createStoreOpen}
+        open={hasDashboardAccess && createStoreOpen}
         onClose={() => setCreateStoreOpen(false)}
         onCreateStore={handleCreateStore}
       />
 
       <DoorLayoutEditorModal
-        open={doorEditorOpen}
+        open={hasDashboardAccess && doorEditorOpen}
         onClose={() => setDoorEditorOpen(false)}
         doors={doors}
         activeDoorId={selectedDoorId}
@@ -3066,7 +3102,7 @@ export default function App() {
       />
 
       <AddCustomSkuModal
-        open={addSkuOpen}
+        open={hasDashboardAccess && addSkuOpen}
         onClose={() => {
           setAddSkuOpen(false);
           setPrefillUpc('');
@@ -3083,7 +3119,7 @@ export default function App() {
       />
 
       <BarcodeQrScannerModal
-        open={scannerOpen}
+        open={hasDashboardAccess && scannerOpen}
         onClose={() => {
           setScannerOpen(false);
           setScannerTargetSlot(null);
@@ -3111,7 +3147,7 @@ export default function App() {
       />
 
       <OnboardingWizardModal
-        open={onboardingOpen}
+        open={hasDashboardAccess && onboardingOpen}
         initialStep={onboardingStep}
         onClose={() => setOnboardingOpen(false)}
         onboarding={onboarding}
@@ -3132,7 +3168,7 @@ export default function App() {
       />
 
       <AuditLogDrawer
-        open={auditLogOpen}
+        open={hasDashboardAccess && auditLogOpen}
         onClose={() => setAuditLogOpen(false)}
         entries={auditLog}
         onExportCsv={() => {
@@ -3160,7 +3196,7 @@ export default function App() {
       />
 
       <NotificationCenterDrawer
-        open={notificationsOpen}
+        open={hasDashboardAccess && notificationsOpen}
         onClose={() => setNotificationsOpen(false)}
         notifications={notifications}
         onMarkRead={(id) => {
@@ -3192,7 +3228,7 @@ export default function App() {
       />
 
       <CsvImportExportModal
-        open={csvModalOpen}
+        open={hasDashboardAccess && csvModalOpen}
         onClose={() => setCsvModalOpen(false)}
         initialTab={csvModalTab}
         doors={doors}
@@ -3209,7 +3245,7 @@ export default function App() {
       />
 
       <ImageLibraryModal
-        open={imageLibraryOpen}
+        open={hasDashboardAccess && imageLibraryOpen}
         onClose={() => setImageLibraryOpen(false)}
         assets={imageAssets}
         doors={doors}
@@ -3255,7 +3291,7 @@ export default function App() {
 
       {/* Multi-Turn Gemini Merchandising Copilot Drawer */}
       <AiAssistantDrawer
-        open={chatOpen}
+        open={hasDashboardAccess && chatOpen}
         onClose={() => setChatOpen(false)}
         messages={chatMessages}
         onSendMessage={handleSendChatMessage}
@@ -3286,7 +3322,7 @@ export default function App() {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             const isCentralScan = item.id === 'scan';
-            const isTabLocked = !authUser && lockedTabs.has(item.id);
+            const isTabLocked = !hasDashboardAccess && lockedTabs.has(item.id);
 
             if (isCentralScan) {
               return (

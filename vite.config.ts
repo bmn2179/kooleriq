@@ -28,6 +28,14 @@ export default defineConfig(() => {
         },
       },
     ],
+    build: {
+      rollupOptions: {
+        input: {
+          index: path.resolve(__dirname, 'index.html'),
+          dashboard: path.resolve(__dirname, 'dashboard.html'),
+        },
+      },
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

@@ -93,8 +93,8 @@ exports.createCheckoutSession = onRequest(
             },
           },
         ],
-        success_url: `${appUrl}/?stripe_success=1`,
-        cancel_url: `${appUrl}/?stripe_canceled=1`,
+        success_url: `${appUrl}/dashboard.html?stripe_success=1`,
+        cancel_url: `${appUrl}/dashboard.html?stripe_canceled=1`,
         metadata: {
           firebaseUid: user.uid,
           planTier,

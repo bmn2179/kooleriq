@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import type { DecodedIdToken } from 'firebase-admin/auth';
-import { adminAuth } from '../lib/firebase-admin.ts';
+import { adminAuth, adminFirestore } from '../lib/firebase-admin.ts';
 
 export interface AuthRequest extends Request {
   user?: DecodedIdToken;
@@ -24,6 +24,35 @@ export const requireAuth = async (
   } catch (error) {
     console.error('Error verifying Firebase ID token:', error);
     return res.status(401).json({ error: 'Unauthorized: Invalid token' });
+  }
+};
+
+export const requirePaidSubscription = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Unauthorized: Authentication required' });
+  }
+
+  try {
+    const snapshot = await adminFirestore.doc(`users/${req.user.uid}`).get();
+    const subscription = snapshot.data();
+    const hasPaidPlan =
+      subscription?.planTier === 'pro' || subscription?.planTier === 'enterprise';
+    const isActive =
+      subscription?.subscriptionStatus === 'active' ||
+      subscription?.subscriptionStatus === 'trialing';
+
+    if (!snapshot.exists || !hasPaidPlan || !isActive) {
+      return res.status(402).json({ error: 'An active Pro or Enterprise subscription is required.' });
+    }
+
+    return next();
+  } catch (error) {
+    console.error('Error verifying Firebase subscription:', error);
+    return res.status(503).json({ error: 'Unable to verify subscription status.' });
   }
 };
 

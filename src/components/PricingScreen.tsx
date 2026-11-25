@@ -43,18 +43,17 @@ const TIERS: TierSpec[] = [
   {
     id: 'starter',
     name: 'Starter',
-    audience: 'For single-door trials & independent operators',
+    audience: 'For exploring the interactive preview',
     monthlyUnitPrice: 0,
     annualUnitPrice: 0,
-    unitLabel: 'per store / mo',
+    unitLabel: 'prototype preview',
     defaultDoors: 2,
-    playChannel: 'Free on Google Play Store',
-    summary: 'Core cooler planogram mapping and manual restock tracking on Android and web.',
+    playChannel: 'No live dashboard access',
+    summary: 'Explore the interactive prototype. A paid Pro or Enterprise plan is required to use the live dashboard.',
     highlights: [
-      'Up to 2 refrigerated cooler doors',
-      '20 AI optical shelf audits per month',
-      'Live temperature probe alerts (°F / °C)',
-      'Walk-in backstock & CSV export',
+      'Interactive prototype preview',
+      'No live workspace or store data',
+      'Upgrade to Pro or Enterprise to unlock the dashboard',
     ],
   },
   {
@@ -65,7 +64,7 @@ const TIERS: TierSpec[] = [
     annualUnitPrice: 39,
     unitLabel: 'per door / mo',
     defaultDoors: 4,
-    playChannel: 'Google Play Billing or Direct Invoice',
+    playChannel: 'Stripe subscription checkout',
     summary: 'Unlimited AI camera audits, revenue swap recommendations, and live market grounding.',
     highlights: [
       'Up to 25 cooler doors per store',
@@ -83,7 +82,7 @@ const TIERS: TierSpec[] = [
     annualUnitPrice: 95,
     unitLabel: 'per store / mo',
     defaultDoors: 20,
-    playChannel: 'Managed Google Play Enterprise APK',
+    playChannel: 'Stripe subscription or invoiced contract',
     summary: 'Fleet-wide planogram governance, POS velocity sync, and private Android deployment.',
     highlights: [
       'Unlimited stores & cooler doors',
@@ -102,37 +101,37 @@ const COMPARISON_MATRIX: Array<{
 }> = [
   {
     capability: 'Cooler Doors Included',
-    starter: '2 doors max',
+    starter: 'Prototype preview only',
     pro: 'Up to 25 doors / store',
     enterprise: 'Unlimited doors',
   },
   {
     capability: 'AI Optical Shelf Audits',
-    starter: '20 scans / month',
+    starter: 'No live scans',
     pro: 'Unlimited scans',
     enterprise: 'Unlimited + batch fleet',
   },
   {
     capability: 'Gemini Search Grounding',
-    starter: '5 queries / day',
+    starter: 'Not included',
     pro: 'Unlimited web grounding',
     enterprise: 'Unlimited + custom feeds',
   },
   {
     capability: 'Google Play Distribution',
-    starter: 'Public Play Store app',
+    starter: 'Prototype preview only',
     pro: 'Play Store + Play Billing',
     enterprise: 'Managed Google Play MDM',
   },
   {
     capability: 'Offline Cooler Vault Mode',
-    starter: 'Online only',
+    starter: 'Not included',
     pro: '48-hour offline queue',
     enterprise: '7-day multi-route cache',
   },
   {
     capability: 'Database & Telemetry Retention',
-    starter: '14-day audit history',
+    starter: 'No workspace history',
     pro: '12-month Cloud SQL log',
     enterprise: '36-month fleet archive',
   },
@@ -296,7 +295,10 @@ export const PricingScreen: React.FC<PricingScreenProps> = ({
           const unitPrice =
             billingCycle === 'annual' ? tier.annualUnitPrice : tier.monthlyUnitPrice;
           const totalMonthly = getCalculatedPrice(tier);
-          const isCurrentPlan = subscription.planTier === tier.id;
+          const isCurrentPlan =
+            tier.id !== 'starter' &&
+            subscription.planTier === tier.id &&
+            (subscription.status === 'active' || subscription.status === 'trialing');
 
           return (
             <div
@@ -331,7 +333,7 @@ export const PricingScreen: React.FC<PricingScreenProps> = ({
                   </div>
                   <div className="text-xs font-mono-tabular text-[var(--kq-accent)] font-medium mt-1.5">
                     {tier.id === 'starter'
-                      ? 'Free forever on Google Play'
+                      ? 'Free interactive prototype preview'
                       : `Estimated total: $${totalMonthly.toLocaleString()}/mo (${storeCount} ${
                           storeCount === 1 ? 'store' : 'stores'
                         })`}
@@ -357,7 +359,11 @@ export const PricingScreen: React.FC<PricingScreenProps> = ({
                 {isAuthenticated ? (
                   <button
                     type="button"
-                    disabled={isSaving || (isCurrentPlan && subscription.billingCycle === billingCycle)}
+                    disabled={
+                      tier.id === 'starter' ||
+                      isSaving ||
+                      (isCurrentPlan && subscription.billingCycle === billingCycle)
+                    }
                     onClick={() =>
                       onSelectPlan(
                         tier.id,
@@ -367,14 +373,21 @@ export const PricingScreen: React.FC<PricingScreenProps> = ({
                       )
                     }
                     className={`w-full min-h-[44px] px-4 py-2.5 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-2 ${
-                      isCurrentPlan && subscription.billingCycle === billingCycle
+                      tier.id === 'starter'
+                        ? 'opacity-60 cursor-not-allowed'
+                        : isCurrentPlan && subscription.billingCycle === billingCycle
                         ? 'bg-[var(--kq-emerald-soft)] border border-[var(--kq-emerald)] text-[var(--kq-emerald-text)]'
                         : tier.featured
                           ? 'bg-[var(--kq-accent)] text-[var(--kq-accent-fg)] hover:bg-[var(--kq-accent-hover)]'
                           : 'bg-[var(--kq-accent-soft)] border border-[var(--kq-accent-border)] text-[var(--kq-accent)] hover:opacity-90'
                     }`}
                   >
-                    {isCurrentPlan && subscription.billingCycle === billingCycle ? (
+                    {tier.id === 'starter' ? (
+                      <>
+                        <CreditCard className="w-4 h-4" />
+                        Prototype only — no dashboard access
+                      </>
+                    ) : isCurrentPlan && subscription.billingCycle === billingCycle ? (
                       <>
                         <ShieldCheck className="w-4 h-4" />
                         Active ({billingCycle})
@@ -382,7 +395,7 @@ export const PricingScreen: React.FC<PricingScreenProps> = ({
                     ) : (
                       <>
                         <CreditCard className="w-4 h-4" />
-                        {tier.id === 'starter' ? `Activate ${tier.name}` : `Pay securely with Stripe`}
+                        Pay securely with Stripe
                       </>
                     )}
                   </button>
@@ -410,10 +423,10 @@ export const PricingScreen: React.FC<PricingScreenProps> = ({
       <div className="glacier-card rounded-xl overflow-hidden">
         <div className="px-5 py-4 border-b border-[var(--kq-border)]">
           <h3 className="text-base font-semibold text-[var(--kq-text)]">
-            Plan Limits &amp; Google Play Capability Matrix
+            Paid Plan Limits &amp; Workspace Access
           </h3>
           <p className="text-xs text-[var(--kq-text-muted)] mt-0.5">
-            Exact operational quotas across web telemetry and Google Play Android handhelds
+            Live dashboard capabilities are available with an active Pro or Enterprise subscription
           </p>
         </div>
 

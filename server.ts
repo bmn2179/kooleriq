@@ -15,7 +15,7 @@ import {
   upsertSubscriptionForUser,
   upsertWorkspaceForUser,
 } from './src/db/users.ts';
-import { optionalAuth, requireAuth } from './src/middleware/auth.ts';
+import { requireAuth, requirePaidSubscription } from './src/middleware/auth.ts';
 import type { AuthRequest } from './src/middleware/auth.ts';
 import { adminFirestore } from './src/lib/firebase-admin.ts';
 
@@ -194,7 +194,7 @@ app.get('/api/health', (_req, res) => {
 });
 
 // Load authenticated user's persisted Cloud SQL workspace, subscription, and chat history
-app.get('/api/workspace', requireAuth, async (req: AuthRequest, res) => {
+app.get('/api/workspace', requireAuth, requirePaidSubscription, async (req: AuthRequest, res) => {
   try {
     const userRecord = await getOrCreateUser(
       req.user!.uid,
@@ -224,7 +224,7 @@ app.get('/api/workspace', requireAuth, async (req: AuthRequest, res) => {
 });
 
 // Save authenticated user's cooler workspace state to PostgreSQL
-app.put('/api/workspace', requireAuth, async (req: AuthRequest, res) => {
+app.put('/api/workspace', requireAuth, requirePaidSubscription, async (req: AuthRequest, res) => {
   try {
     const {
       storeName,
@@ -272,7 +272,7 @@ app.put('/api/workspace', requireAuth, async (req: AuthRequest, res) => {
 });
 
 // Persist pricing plan & Google Play subscription selection in PostgreSQL
-app.put('/api/subscription', requireAuth, async (req: AuthRequest, res) => {
+app.put('/api/subscription', requireAuth, requirePaidSubscription, async (req: AuthRequest, res) => {
   try {
     const { planTier, billingCycle, doorQuota, storeCount, googlePlayLinked } = req.body ?? {};
     const validTiers = new Set(['starter', 'pro', 'enterprise']);
@@ -350,8 +350,8 @@ app.post('/api/stripe/create-checkout-session', requireAuth, async (req: AuthReq
           },
         },
       ],
-      success_url: `${appUrl}/orders?stripe_success=1&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${appUrl}/orders?stripe_canceled=1`,
+      success_url: `${appUrl}/dashboard.html?stripe_success=1&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${appUrl}/dashboard.html?stripe_canceled=1`,
       metadata: {
         firebaseUid: req.user!.uid,
         planTier,
@@ -377,7 +377,7 @@ app.post('/api/stripe/create-checkout-session', requireAuth, async (req: AuthReq
 });
 
 // Clear persisted chat messages
-app.delete('/api/chat-history', requireAuth, async (req: AuthRequest, res) => {
+app.delete('/api/chat-history', requireAuth, requirePaidSubscription, async (req: AuthRequest, res) => {
   try {
     const userRecord = await getOrCreateUser(
       req.user!.uid,
@@ -393,7 +393,7 @@ app.delete('/api/chat-history', requireAuth, async (req: AuthRequest, res) => {
 });
 
 // Multi-turn Gemini Merchandising Chatbot with optional Search Grounding
-app.post('/api/ai/chat', optionalAuth, async (req: AuthRequest, res) => {
+app.post('/api/ai/chat', requireAuth, requirePaidSubscription, async (req: AuthRequest, res) => {
   const ai = getGeminiClient();
   if (!ai) {
     return res.status(503).json({
@@ -435,7 +435,7 @@ app.post('/api/ai/chat', optionalAuth, async (req: AuthRequest, res) => {
       'You are KoolerIQ Copilot, an operational cold-chain retail merchandiser, planogram analyst, and route optimization advisor for convenience stores and gas stations (www.kooleriq.com).',
       'Be concise, data-driven, and practical for store managers and route drivers.',
       'Reference exact door numbers, shelf coordinates (e.g., S2-F05), temperatures, OOS gaps, and SKU pricing from the live store context when relevant.',
-      'KoolerIQ also distributes its Android mobile app via Google Play with Starter ($0/mo, up to 2 doors), Pro Operator ($49/door/mo monthly or $39/door/mo annual), and Enterprise Fleet ($119/store/mo monthly or $95/store/mo annual) plans.',
+      'KoolerIQ offers a free interactive prototype preview; live dashboard access requires an active Stripe Pro ($49/door/mo monthly or $39/door/mo annual) or Enterprise ($119/store/mo monthly or $95/store/mo annual) subscription.',
       `Current live store cooler telemetry:\n${contextSummary}`,
     ].join('\n\n');
 
@@ -495,7 +495,7 @@ app.post('/api/ai/chat', optionalAuth, async (req: AuthRequest, res) => {
 });
 
 // Live Google Search Grounded Beverage & Convenience Store Market Intelligence
-app.post('/api/ai/market-search', optionalAuth, async (req: AuthRequest, res) => {
+app.post('/api/ai/market-search', requireAuth, requirePaidSubscription, async (req: AuthRequest, res) => {
   const ai = getGeminiClient();
   if (!ai) {
     return res.status(503).json({
@@ -540,7 +540,7 @@ app.post('/api/ai/market-search', optionalAuth, async (req: AuthRequest, res) =>
 });
 
 // Structured Storewide Planogram & Revenue Optimization via Gemini
-app.post('/api/ai/planogram-analyze', optionalAuth, async (req: AuthRequest, res) => {
+app.post('/api/ai/planogram-analyze', requireAuth, requirePaidSubscription, async (req: AuthRequest, res) => {
   const ai = getGeminiClient();
   if (!ai) {
     return res.status(503).json({
@@ -637,7 +637,7 @@ app.post('/api/ai/planogram-analyze', optionalAuth, async (req: AuthRequest, res
 });
 
 // Multimodal Cooler Shelf Photo Inspection via Gemini
-app.post('/api/ai/vision-audit', optionalAuth, async (req: AuthRequest, res) => {
+app.post('/api/ai/vision-audit', requireAuth, requirePaidSubscription, async (req: AuthRequest, res) => {
   const ai = getGeminiClient();
   if (!ai) {
     return res.status(503).json({
