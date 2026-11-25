@@ -35,6 +35,7 @@ import {
 } from './components/OnboardingFlow';
 import { OrdersScreen } from './components/OrdersScreen';
 import { PlanogramScreen } from './components/PlanogramScreen';
+import { PrototypePreviewModal } from './components/PrototypePreviewModal';
 import { ReportsScreen } from './components/ReportsScreen';
 import { ScanHubScreen } from './components/ScanHubScreen';
 import { SettingsScreen } from './components/SettingsScreen';
@@ -340,6 +341,7 @@ export default function App() {
   const [csvModalTab, setCsvModalTab] = useState<'import' | 'export'>('import');
   const [imageLibraryOpen, setImageLibraryOpen] = useState(false);
   const [imageLibraryMode, setImageLibraryMode] = useState<'manage' | 'pick-for-sku'>('manage');
+  const [prototypeOpen, setPrototypeOpen] = useState(false);
 
   const [orders, setOrders] = useState<DistributorOrderRecord[]>(() => {
     try {
@@ -483,6 +485,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState<boolean>(true);
   const [isSigningIn, setIsSigningIn] = useState<boolean>(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [fatalBoundaryError, setFatalBoundaryError] = useState<Error | null>(null);
   const [isSavingPlan, setIsSavingPlan] = useState<boolean>(false);
   const firestoreReadyRef = useRef<boolean>(false);
   const saveTimeoutRef = useRef<number | null>(null);
@@ -695,10 +698,18 @@ export default function App() {
 
         firestoreReadyRef.current = true;
       } catch (err) {
-        if (err instanceof Error && err.message.startsWith('{')) {
-          throw err;
+        if (!active) return;
+        const msg = err instanceof Error ? err.message : 'Unable to initialize cloud workspace.';
+        if (msg.includes('Quota exceeded')) {
+          setFatalBoundaryError(err instanceof Error ? err : new Error(msg));
+          return;
         }
-        setAuthError(err instanceof Error ? err.message : 'Unable to initialize cloud workspace.');
+        try {
+          const parsed = JSON.parse(msg) as { error?: string };
+          setAuthError(parsed?.error || msg);
+        } catch {
+          setAuthError(msg);
+        }
       } finally {
         if (active) setAuthLoading(false);
       }
@@ -2432,6 +2443,10 @@ export default function App() {
     [authUser, showToast]
   );
 
+  if (fatalBoundaryError) {
+    throw fatalBoundaryError;
+  }
+
   return (
     <div className="min-h-screen bg-[var(--kq-canvas)] text-[var(--kq-text)] flex flex-col">
       {/* Top Navigation Bar (Strict 3-Zone Contract) */}
@@ -2748,6 +2763,19 @@ export default function App() {
           />
         )}
 
+        {authError && authUser && (
+          <div className="mb-4 rounded-xl bg-[var(--kq-crimson-soft)] border border-[var(--kq-crimson)] px-4 py-3 text-xs text-[var(--kq-crimson-text)] flex items-center justify-between gap-3">
+            <span>{authError}</span>
+            <button
+              type="button"
+              onClick={() => setAuthError(null)}
+              className="underline font-semibold shrink-0"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
         {authLoading && lockedTabs.has(activeTab) ? (
           <div className="py-16 flex items-center justify-center">
             <div className="glacier-card rounded-xl px-6 py-5 text-xs font-mono-tabular text-[var(--kq-text-secondary)]">
@@ -2760,6 +2788,7 @@ export default function App() {
             isSigningIn={isSigningIn}
             authError={authError}
             onSignIn={handleGoogleSignIn}
+            onOpenPrototype={() => setPrototypeOpen(true)}
           />
         ) : null}
 
@@ -2949,6 +2978,7 @@ export default function App() {
               })
             }
             onOpenAuditLog={() => requireSignedInAction(() => setAuditLogOpen(true))}
+            onOpenPrototype={() => setPrototypeOpen(true)}
           />
         )}
       </main>
@@ -3177,6 +3207,11 @@ export default function App() {
         onClearHistory={handleClearChatHistory}
         isSending={chatSending}
         errorMsg={chatError}
+      />
+
+      <PrototypePreviewModal
+        open={prototypeOpen}
+        onClose={() => setPrototypeOpen(false)}
       />
 
       {/* Toast Notification */}

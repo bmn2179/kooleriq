@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Camera, ClipboardList, Compass, FileSpreadsheet, Globe, Images, Minus, Plus, RotateCcw, ShieldCheck, Thermometer } from 'lucide-react';
+import { Camera, ClipboardList, Compass, FileSpreadsheet, Globe, Images, Minus, Play, Plus, RotateCcw, ShieldCheck, Thermometer } from 'lucide-react';
 import { CoolerDoor, StoreSettings } from '../types/kooleriq';
 import { formatTemp } from '../utils/formatters';
 import { KoolerIQLogo } from './KoolerIQLogo';
@@ -15,6 +15,7 @@ interface SettingsScreenProps {
   onOpenCsvHub: () => void;
   onOpenImageLibrary: () => void;
   onOpenAuditLog: () => void;
+  onOpenPrototype: () => void;
 }
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
@@ -28,6 +29,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onOpenCsvHub,
   onOpenImageLibrary,
   onOpenAuditLog,
+  onOpenPrototype,
 }) => {
   const [brandLogoFailed, setBrandLogoFailed] = useState(false);
   const [cameraPerm, setCameraPerm] = useState<'granted' | 'prompt' | 'denied' | 'unknown'>('unknown');
@@ -109,6 +111,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap shrink-0">
+          <button
+            type="button"
+            onClick={onOpenPrototype}
+            className="min-h-[44px] px-4 py-2 rounded-lg bg-[var(--kq-surface)] border border-[var(--kq-border-strong)] text-[var(--kq-text)] text-xs font-semibold hover:border-[var(--kq-accent)] transition-colors flex items-center gap-2 whitespace-nowrap"
+          >
+            <Play className="w-4 h-4 text-[var(--kq-accent)]" />
+            Animated Prototype
+          </button>
           <button
             type="button"
             onClick={onOpenOnboarding}

@@ -6,6 +6,7 @@ import {
   Lock,
   LogIn,
   Package,
+  Play,
   ScanBarcode,
   ShieldCheck,
   ShoppingCart,
@@ -18,6 +19,7 @@ interface AuthGateScreenProps {
   isSigningIn: boolean;
   authError: string | null;
   onSignIn: () => void;
+  onOpenPrototype: () => void;
 }
 
 const LOCKED_MODULES: {
@@ -63,6 +65,7 @@ export const AuthGateScreen: React.FC<AuthGateScreenProps> = ({
   isSigningIn,
   authError,
   onSignIn,
+  onOpenPrototype,
 }) => {
   const activeModule = LOCKED_MODULES.find((m) => m.id === lockedTab) ?? LOCKED_MODULES[0];
 
@@ -139,15 +142,26 @@ export const AuthGateScreen: React.FC<AuthGateScreenProps> = ({
             </span>
           </div>
 
-          <button
-            type="button"
-            disabled={isSigningIn}
-            onClick={onSignIn}
-            className="min-h-[46px] px-6 py-2.5 rounded-xl bg-[var(--kq-accent)] text-[var(--kq-accent-fg)] text-sm font-semibold hover:bg-[var(--kq-accent-hover)] disabled:opacity-60 transition-colors inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 shadow-sm"
-          >
-            <LogIn className="w-4 h-4" />
-            {isSigningIn ? 'Signing in...' : 'Sign in with Google to Unlock'}
-          </button>
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={onOpenPrototype}
+              className="min-h-[46px] px-4 py-2.5 rounded-xl bg-[var(--kq-surface-muted)] border border-[var(--kq-border-strong)] text-[var(--kq-text)] text-xs font-semibold hover:border-[var(--kq-accent)] transition-colors inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0"
+            >
+              <Play className="w-4 h-4 text-[var(--kq-accent)]" />
+              Preview Animated Prototype
+            </button>
+
+            <button
+              type="button"
+              disabled={isSigningIn}
+              onClick={onSignIn}
+              className="min-h-[46px] px-6 py-2.5 rounded-xl bg-[var(--kq-accent)] text-[var(--kq-accent-fg)] text-sm font-semibold hover:bg-[var(--kq-accent-hover)] disabled:opacity-60 transition-colors inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 shadow-sm"
+            >
+              <LogIn className="w-4 h-4" />
+              {isSigningIn ? 'Signing in...' : 'Sign in with Google to Unlock'}
+            </button>
+          </div>
         </div>
       </div>
     </section>

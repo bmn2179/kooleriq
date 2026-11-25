@@ -61,7 +61,8 @@ export function sanitizeDocId(raw: string, fallbackPrefix = 'doc'): string {
 }
 
 function clampStr(value: unknown, maxLen: number, fallback = ''): string {
-  const str = typeof value === 'string' ? value.trim() : fallback;
+  const raw = typeof value === 'string' ? value.trim() : '';
+  const str = raw.length > 0 ? raw : fallback;
   return str.slice(0, maxLen);
 }
 
@@ -81,24 +82,69 @@ function stripUndefinedDeep<T>(val: T): T {
   return val;
 }
 
-export function sanitizeDoorForFirestore(door: CoolerDoor): CoolerDoor {
+interface SerializedShelfRow {
+  shelfIndex: number;
+  facings: CoolerDoor['shelves'][number];
+}
+
+export function sanitizeDoorForFirestore(door: CoolerDoor): Record<string, unknown> {
   const safePhoto =
     door.photoUrl && !(door.photoUrl.startsWith('data:') && door.photoUrl.length > 512)
       ? door.photoUrl.slice(0, 512)
       : undefined;
+
+  const serializedShelves: SerializedShelfRow[] = (door.shelves || []).map((shelf, shelfIdx) => ({
+    shelfIndex: shelfIdx,
+    facings: (shelf || []).map((slot, facingIdx) => ({
+      ...slot,
+      shelfIndex: Number.isFinite(slot.shelfIndex) ? slot.shelfIndex : shelfIdx,
+      facingIndex: Number.isFinite(slot.facingIndex) ? slot.facingIndex : facingIdx,
+      currentDepth: Number.isFinite(slot.currentDepth) ? slot.currentDepth : 0,
+      maxDepth: Number.isFinite(slot.maxDepth) ? slot.maxDepth : 6,
+      aiRecommendation: slot.aiRecommendation ? { ...slot.aiRecommendation } : undefined,
+    })),
+  }));
 
   return stripUndefinedDeep({
     ...door,
     id: sanitizeDocId(door.id, 'door'),
     label: clampStr(door.label, 120, 'Cooler Door'),
     photoUrl: safePhoto,
-    shelves: door.shelves.map((shelf) =>
-      shelf.map((slot) => ({
-        ...slot,
-        aiRecommendation: slot.aiRecommendation ? { ...slot.aiRecommendation } : undefined,
-      }))
-    ),
+    shelves: serializedShelves,
   });
+}
+
+export function deserializeDoorFromFirestore(rawDoor: unknown): CoolerDoor {
+  const d = (rawDoor && typeof rawDoor === 'object' ? rawDoor : {}) as Record<string, unknown>;
+  const rawShelves = Array.isArray(d.shelves) ? d.shelves : [];
+
+  const shelves: CoolerDoor['shelves'] = rawShelves.map((row) => {
+    if (Array.isArray(row)) {
+      return row;
+    }
+    if (row && typeof row === 'object' && Array.isArray((row as SerializedShelfRow).facings)) {
+      return (row as SerializedShelfRow).facings;
+    }
+    return [];
+  });
+
+  return {
+    id: String(d.id || 'door-1'),
+    number: String(d.number || '01'),
+    label: String(d.label || 'Cooler Door'),
+    category: String(d.category || 'Beverages'),
+    hardwareType: (d.hardwareType as CoolerDoor['hardwareType']) || 'standard-glass',
+    facingsPerShelf: Number(d.facingsPerShelf) || (shelves[0]?.length ?? 6),
+    defaultMaxDepth: Number(d.defaultMaxDepth) || 6,
+    tempF: Number(d.tempF) || 36,
+    targetTempF: Number(d.targetTempF) || 36,
+    humidityPct: Number(d.humidityPct) || 45,
+    doorOpensToday: Number(d.doorOpensToday) || 0,
+    lastAuditAt: String(d.lastAuditAt || 'Just now'),
+    compressorState: (d.compressorState as CoolerDoor['compressorState']) || 'nominal',
+    shelves,
+    ...(typeof d.photoUrl === 'string' ? { photoUrl: d.photoUrl } : {}),
+  };
 }
 
 export function buildStoreDocPayload(
@@ -693,7 +739,7 @@ export function subscribeToUserWorkspace(
           return {
             id: docSnap.id,
             layoutTemplate: String(d.layoutTemplate || 'Custom Cooler'),
-            doors: Array.isArray(d.doors) ? (d.doors as CoolerDoor[]) : [],
+            doors: Array.isArray(d.doors) ? d.doors.map(deserializeDoorFromFirestore) : [],
             carriedSkuIds: Array.isArray(d.carriedSkuIds) ? (d.carriedSkuIds as string[]) : [],
             insights: Array.isArray(d.insights) ? d.insights : [],
             audits: Array.isArray(d.audits) ? d.audits : [],
