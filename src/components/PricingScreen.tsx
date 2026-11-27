@@ -118,10 +118,10 @@ const COMPARISON_MATRIX: Array<{
     enterprise: 'Unlimited + custom feeds',
   },
   {
-    capability: 'Google Play Distribution',
-    starter: 'Prototype preview only',
-    pro: 'Play Store + Play Billing',
-    enterprise: 'Managed Google Play MDM',
+    capability: 'Google Play Billing',
+    starter: 'Not included',
+    pro: 'Not configured; use website Stripe checkout',
+    enterprise: 'Not configured; use website Stripe checkout or invoice',
   },
   {
     capability: 'Offline Cooler Vault Mode',
@@ -164,21 +164,18 @@ export const PricingScreen: React.FC<PricingScreenProps> = ({
         <div className="space-y-2 max-w-2xl">
           <div className="flex items-center gap-2 text-xs font-mono-tabular text-[var(--kq-emerald)] font-semibold">
             <Smartphone className="w-4 h-4" />
-            <span>GOOGLE PLAY RELEASE · ANDROID 10+ &amp; RETAIL HANDHELDS</span>
+            <span>WEB SUBSCRIPTIONS · STRIPE CHECKOUT</span>
           </div>
           <h2 className="text-xl font-display font-bold text-[var(--kq-text)]">
-            Available on Google Play &amp; Web Telemetry Console
+            Plans for Web and Android
           </h2>
           <p className="text-sm text-[var(--kq-text-secondary)] leading-relaxed">
-            Deploy KoolerIQ directly to store managers and route merchandisers through the{' '}
-            <span className="text-[var(--kq-text)] font-medium">Google Play Store</span> or{' '}
-            <span className="text-[var(--kq-text)] font-medium">Managed Google Play</span> for Zebra
-            and rugged Android scanners. Subscriptions sync seamlessly between Android Play
-            Billing and{' '}
+            Purchase securely through Stripe on{' '}
             <span className="font-mono-tabular text-[var(--kq-accent)] font-medium">
               www.kooleriq.com
             </span>
-            .
+            . Google Play Billing is not configured in the Android app; use website checkout, then
+            sign in on mobile with the same Google account.
           </p>
         </div>
 

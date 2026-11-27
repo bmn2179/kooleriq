@@ -2862,22 +2862,10 @@ export default function App() {
             onOpenPrototype={() => setPrototypeOpen(true)}
           />
         ) : isSubscriptionLocked ? (
-          <div className="space-y-5">
-            <div className="glacier-card rounded-xl border border-[var(--kq-accent-border)] p-5">
-              <h2 className="text-lg font-semibold text-[var(--kq-text)]">
-                A paid plan is required to unlock the dashboard
-              </h2>
-              <p className="mt-1 text-sm text-[var(--kq-text-secondary)]">
-                Choose Pro or Enterprise and complete Stripe checkout. Dashboard access unlocks after payment is confirmed.
-              </p>
-            </div>
-            <PricingScreen
-              subscription={subscription}
-              isAuthenticated
-              isSaving={isSavingPlan}
-              onSelectPlan={handleSelectPlan}
-              onSignInPrompt={handleGoogleSignIn}
-            />
+          <div className="glacier-card rounded-xl border border-[var(--kq-accent-border)] p-5">
+            <h2 className="text-lg font-semibold text-[var(--kq-text)]">
+              Choose a plan to unlock the dashboard
+            </h2>
           </div>
         ) : null}
 
@@ -3071,6 +3059,40 @@ export default function App() {
           />
         )}
       </main>
+
+      {!authLoading && (isWorkspaceLocked || isSubscriptionLocked) && (
+        <div
+          className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-slate-950/75 p-3 backdrop-blur-sm sm:items-center sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="pricing-gate-title"
+        >
+          <div className="glacier-card my-0 max-h-[calc(100vh-1.5rem)] w-full max-w-[1440px] overflow-y-auto rounded-2xl border border-[var(--kq-border-strong)] sm:my-4 sm:max-h-[calc(100vh-3rem)]">
+            <div className="sticky top-0 z-10 border-b border-[var(--kq-border)] bg-[var(--kq-surface)]/95 px-4 py-4 backdrop-blur sm:px-6">
+              <h2
+                id="pricing-gate-title"
+                className="text-lg font-display font-bold text-[var(--kq-text)] sm:text-xl"
+              >
+                Choose a plan to continue
+              </h2>
+              <p className="mt-1 text-xs text-[var(--kq-text-secondary)] sm:text-sm">
+                {!authUser
+                  ? 'Review plans below. Sign in with Google before checkout.'
+                  : 'An active Pro or Enterprise plan is required to enter the live workspace.'}
+              </p>
+            </div>
+            <div className="p-3 sm:p-6">
+              <PricingScreen
+                subscription={subscription}
+                isAuthenticated={Boolean(authUser)}
+                isSaving={isSavingPlan}
+                onSelectPlan={handleSelectPlan}
+                onSignInPrompt={handleGoogleSignIn}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Quiet Desktop Footer */}
       {hasDashboardAccess && (
