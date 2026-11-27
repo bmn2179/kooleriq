@@ -19,6 +19,7 @@ interface AuthGateScreenProps {
   isSigningIn: boolean;
   authError: string | null;
   onSignIn: () => void;
+  onTestAccountSignIn: (email: string, password: string) => Promise<void>;
   onOpenPrototype: () => void;
 }
 
@@ -65,9 +66,17 @@ export const AuthGateScreen: React.FC<AuthGateScreenProps> = ({
   isSigningIn,
   authError,
   onSignIn,
+  onTestAccountSignIn,
   onOpenPrototype,
 }) => {
   const activeModule = LOCKED_MODULES.find((m) => m.id === lockedTab) ?? LOCKED_MODULES[0];
+  const [testEmail, setTestEmail] = React.useState('');
+  const [testPassword, setTestPassword] = React.useState('');
+
+  const handleTestAccountSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void onTestAccountSignIn(testEmail.trim(), testPassword);
+  };
 
   return (
     <section
@@ -163,6 +172,51 @@ export const AuthGateScreen: React.FC<AuthGateScreenProps> = ({
             </button>
           </div>
         </div>
+
+        <form
+          onSubmit={handleTestAccountSubmit}
+          className="pt-4 border-t border-[var(--kq-border)] space-y-3"
+        >
+          <div>
+            <h3 className="text-sm font-semibold text-[var(--kq-text)]">Testing account</h3>
+            <p className="mt-1 text-xs text-[var(--kq-text-secondary)]">
+              Sign in with an existing Firebase email/password test account.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="space-y-1.5 text-xs font-medium text-[var(--kq-text-secondary)]">
+              <span>Email</span>
+              <input
+                type="email"
+                autoComplete="username"
+                required
+                value={testEmail}
+                onChange={(event) => setTestEmail(event.target.value)}
+                disabled={isSigningIn}
+                className="w-full min-h-[42px] px-3 rounded-lg bg-[var(--kq-surface-muted)] border border-[var(--kq-border-strong)] text-[var(--kq-text)]"
+              />
+            </label>
+            <label className="space-y-1.5 text-xs font-medium text-[var(--kq-text-secondary)]">
+              <span>Password</span>
+              <input
+                type="password"
+                autoComplete="current-password"
+                required
+                value={testPassword}
+                onChange={(event) => setTestPassword(event.target.value)}
+                disabled={isSigningIn}
+                className="w-full min-h-[42px] px-3 rounded-lg bg-[var(--kq-surface-muted)] border border-[var(--kq-border-strong)] text-[var(--kq-text)]"
+              />
+            </label>
+          </div>
+          <button
+            type="submit"
+            disabled={isSigningIn}
+            className="min-h-[42px] px-4 py-2 rounded-lg bg-[var(--kq-accent-soft)] border border-[var(--kq-accent-border)] text-[var(--kq-accent)] text-xs font-semibold hover:opacity-90 disabled:opacity-60 transition-colors"
+          >
+            {isSigningIn ? 'Signing in...' : 'Sign in with testing account'}
+          </button>
+        </form>
       </div>
     </section>
   );

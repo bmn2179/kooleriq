@@ -62,13 +62,19 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
       ['monthly', 'annual'].includes(billingCycle)
     ) {
       try {
+        const subscriptionId =
+          typeof session.subscription === 'string' ? session.subscription : session.subscription?.id;
+        if (!subscriptionId) {
+          throw new Error('Stripe Checkout session is missing its subscription.');
+        }
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
         await adminFirestore.doc(`users/${uid}`).set({
           planTier,
           billingCycle,
           doorQuota: Math.max(1, Math.min(500, doorQuota || 2)),
           storeCount: Math.max(1, Math.min(200, storeCount || 1)),
           googlePlayLinked: false,
-          subscriptionStatus: 'active',
+          subscriptionStatus: subscription.status,
           stripeCustomerId: typeof session.customer === 'string' ? session.customer : null,
           stripeSubscriptionId:
             typeof session.subscription === 'string' ? session.subscription : null,
@@ -335,6 +341,7 @@ app.post('/api/stripe/create-checkout-session', requireAuth, async (req: AuthReq
     const stripe = new Stripe(secretKey);
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
+      payment_method_collection: 'always',
       customer_email: req.user!.email,
       line_items: [
         {
@@ -360,6 +367,7 @@ app.post('/api/stripe/create-checkout-session', requireAuth, async (req: AuthReq
         storeCount: String(parsedStores),
       },
       subscription_data: {
+        trial_period_days: 14,
         metadata: {
           firebaseUid: req.user!.uid,
           planTier,

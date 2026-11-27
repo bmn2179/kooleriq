@@ -1,6 +1,7 @@
 const { getApps, initializeApp } = require('firebase-admin/app');
+const { createHash } = require('node:crypto');
 const { getAuth } = require('firebase-admin/auth');
-const { getFirestore } = require('firebase-admin/firestore');
+const { FieldValue, getFirestore } = require('firebase-admin/firestore');
 const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const Stripe = require('stripe');
@@ -79,6 +80,7 @@ exports.createCheckoutSession = onRequest(
         mode: 'subscription',
         ...(user.email ? { customer_email: user.email } : {}),
         billing_address_collection: 'required',
+        payment_method_collection: 'always',
         automatic_tax: { enabled: true },
         line_items: [
           {
@@ -103,6 +105,7 @@ exports.createCheckoutSession = onRequest(
           storeCount: String(parsedStores),
         },
         subscription_data: {
+          trial_period_days: 14,
           metadata: {
             firebaseUid: user.uid,
             planTier,
@@ -158,6 +161,14 @@ exports.stripeWebhook = onRequest(
           ['monthly', 'annual'].includes(metadata.billingCycle) &&
           ['paid', 'no_payment_required'].includes(session.payment_status)
         ) {
+          const subscriptionId =
+            typeof session.subscription === 'string'
+              ? session.subscription
+              : session.subscription?.id;
+          if (!subscriptionId) {
+            throw new Error('Stripe Checkout session is missing its subscription.');
+          }
+          const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
           await firestore.doc(`users/${metadata.firebaseUid}`).set(
             {
               planTier: metadata.planTier,
@@ -165,7 +176,7 @@ exports.stripeWebhook = onRequest(
               doorQuota: Number(metadata.doorQuota),
               storeCount: Number(metadata.storeCount),
               googlePlayLinked: false,
-              subscriptionStatus: 'active',
+              subscriptionStatus: subscription.status,
               stripeCustomerId:
                 typeof session.customer === 'string' ? session.customer : null,
               stripeSubscriptionId:
@@ -222,5 +233,35 @@ exports.stripeWebhook = onRequest(
     }
 
     return res.json({ received: true });
+  }
+);
+
+exports.captureDemoLead = onRequest(
+  { cors: allowedOrigins },
+  async (req, res) => {
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Method not allowed.' });
+    }
+
+    const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: 'Enter a valid email address.' });
+    }
+
+    try {
+      const emailId = createHash('sha256').update(email).digest('hex');
+      await getFirestore().collection('demoLeads').doc(emailId).set(
+        {
+          email,
+          source: 'marketing-demo',
+          requestedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      return res.json({ saved: true });
+    } catch (error) {
+      console.error('Demo lead capture failed:', error);
+      return res.status(500).json({ error: 'Unable to save your email right now.' });
+    }
   }
 );

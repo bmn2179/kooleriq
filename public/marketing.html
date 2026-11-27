@@ -217,6 +217,26 @@
       .closing-actions { display: flex; justify-content: center; gap: 11px; flex-wrap: wrap; }
       footer { padding: 23px 0; color: #8190a1; background: white; border-top: 1px solid #e7edf3; font-size: 10px; }
       .footer-inner { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+      .demo-dialog {
+        width: min(440px, calc(100% - 32px)); padding: 0; border: 1px solid var(--line);
+        border-radius: 16px; color: var(--ink); background: white;
+        box-shadow: 0 24px 70px rgb(16 35 61 / 28%);
+      }
+      .demo-dialog::backdrop { background: rgb(16 35 61 / 58%); backdrop-filter: blur(4px); }
+      .demo-dialog-content { padding: 27px; }
+      .demo-dialog h2 { margin: 0; font-size: 23px; letter-spacing: -.7px; }
+      .demo-dialog p { margin: 9px 0 20px; color: var(--muted); font-size: 13px; line-height: 1.6; }
+      .demo-dialog label { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 700; }
+      .demo-dialog input {
+        width: 100%; min-height: 45px; padding: 0 12px; border: 1px solid #cbd7e3;
+        border-radius: 8px; color: var(--ink); font: inherit; font-size: 14px;
+      }
+      .demo-dialog input:focus { outline: 3px solid rgb(8 127 189 / 16%); border-color: var(--blue); }
+      .demo-dialog-actions { display: flex; gap: 10px; margin-top: 17px; }
+      .demo-dialog-actions button { min-height: 43px; padding: 0 15px; cursor: pointer; }
+      .demo-dialog-actions .button.secondary { box-shadow: none; }
+      .demo-dialog-actions button:disabled { cursor: wait; opacity: .7; }
+      .demo-error { min-height: 18px; margin-top: 9px; color: #b42318; font-size: 12px; }
       .footer-brand { display: flex; align-items: center; gap: 8px; color: #33475e; font-weight: 700; }
       .footer-brand .brand-mark { width: 24px; height: 24px; border-radius: 7px; }
       .footer-brand .brand-mark svg { width: 16px; height: 16px; }
@@ -336,7 +356,7 @@
               <a href="/pricing.html">Pricing</a>
             </div>
           </details>
-          <a class="nav-cta" href="/kooleriq-prototype.html">
+          <a class="nav-cta" href="/kooleriq-prototype.html" data-demo-access>
             <span class="nav-cta-full">Explore the live demo</span>
             <span class="nav-cta-compact">Try demo</span>
             <span aria-hidden="true">→</span>
@@ -354,7 +374,7 @@
                 Turn cooler checks into confident decisions. See shelf gaps, spot what’s moving, and give every store a smarter planogram.
               </p>
               <div class="hero-actions">
-                <a class="button" href="/kooleriq-prototype.html">See KoolerIQ in action
+                <a class="button" href="/kooleriq-prototype.html" data-demo-access>See KoolerIQ in action
                   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </a>
                 <a class="button secondary" href="#platform">Discover the platform</a>
@@ -452,7 +472,7 @@
               <span class="eyebrow">Made for the real world</span>
               <h2>Less time piecing it together. More time getting it right.</h2>
               <p class="story-copy">KoolerIQ brings your cooler layouts, shelf execution, and store-level signals into one practical workflow your team can use on the go.</p>
-              <a class="button" href="/kooleriq-prototype.html">Try the interactive prototype <span aria-hidden="true">→</span></a>
+              <a class="button" href="/kooleriq-prototype.html" data-demo-access>Try the interactive prototype <span aria-hidden="true">→</span></a>
             </div>
             <div class="workflow reveal">
               <div class="step"><span class="step-no">01 / SEE</span><span class="step-icon">▤</span><strong>Get the full view</strong><p>Bring store coolers and shelf layouts into focus.</p></div>
@@ -468,7 +488,7 @@
             <h2>See KoolerIQ in action.</h2>
             <p>Explore a hands-on product preview and see how a clearer view of your cooler can change the way your team works.</p>
             <div class="closing-actions">
-              <a class="button" href="/kooleriq-prototype.html">Launch the interactive demo <span aria-hidden="true">→</span></a>
+              <a class="button" href="/kooleriq-prototype.html" data-demo-access>Launch the interactive demo <span aria-hidden="true">→</span></a>
               <a class="button secondary" href="mailto:hello@kooleriq.com?subject=KoolerIQ%20demo">Talk to our team</a>
             </div>
           </div>
@@ -483,6 +503,19 @@
         </div>
       </footer>
     </div>
+    <dialog class="demo-dialog" id="demo-dialog" aria-labelledby="demo-dialog-title">
+      <form class="demo-dialog-content" id="demo-access-form">
+        <h2 id="demo-dialog-title">Get access to the demo</h2>
+        <p>Enter your work email to continue to the interactive KoolerIQ demo. We’ll save it so our team can follow up on your request.</p>
+        <label for="demo-email">Email address</label>
+        <input id="demo-email" name="email" type="email" autocomplete="email" maxlength="254" required />
+        <div class="demo-error" id="demo-error" role="alert" aria-live="polite"></div>
+        <div class="demo-dialog-actions">
+          <button class="button" id="demo-submit" type="submit">Continue to demo</button>
+          <button class="button secondary" id="demo-cancel" type="button">Cancel</button>
+        </div>
+      </form>
+    </dialog>
     <script>
       document.getElementById('year').textContent = new Date().getFullYear();
       document.querySelectorAll('.mobile-menu-panel a').forEach((link) => {
@@ -500,6 +533,52 @@
         });
       }, { threshold: 0.12 });
       document.querySelectorAll('.reveal').forEach((element) => revealObserver.observe(element));
+
+      const demoDialog = document.getElementById('demo-dialog');
+      const demoForm = document.getElementById('demo-access-form');
+      const demoEmail = document.getElementById('demo-email');
+      const demoError = document.getElementById('demo-error');
+      const demoSubmit = document.getElementById('demo-submit');
+      const demoCancel = document.getElementById('demo-cancel');
+      let demoTarget = '/kooleriq-prototype.html';
+
+      document.querySelectorAll('[data-demo-access]').forEach((link) => {
+        link.addEventListener('click', (event) => {
+          event.preventDefault();
+          demoTarget = link.href;
+          demoError.textContent = '';
+          demoDialog.showModal();
+          demoEmail.focus();
+        });
+      });
+
+      demoCancel.addEventListener('click', () => demoDialog.close());
+      demoDialog.addEventListener('click', (event) => {
+        if (event.target === demoDialog) demoDialog.close();
+      });
+      demoForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        demoError.textContent = '';
+        demoSubmit.disabled = true;
+        demoSubmit.textContent = 'Saving...';
+        try {
+          const response = await fetch(
+            'https://us-central1-graphite-poetry-xxq1s.cloudfunctions.net/captureDemoLead',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: demoEmail.value.trim() }),
+            }
+          );
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || 'Unable to save your email.');
+          window.location.assign(demoTarget);
+        } catch (error) {
+          demoError.textContent = error instanceof Error ? error.message : 'Unable to continue. Please try again.';
+          demoSubmit.disabled = false;
+          demoSubmit.textContent = 'Continue to demo';
+        }
+      });
     </script>
   </body>
 </html>

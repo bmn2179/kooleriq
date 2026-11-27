@@ -1,5 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signOut,
+  User,
+} from 'firebase/auth';
 import {
   BarChart3,
   Bell,
@@ -845,6 +851,24 @@ export default function App() {
       showToast(`Signed in as ${cred.user.email}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Google sign-in was cancelled.';
+      setAuthError(message);
+      showToast(message);
+    } finally {
+      setIsSigningIn(false);
+    }
+  };
+
+  const handleTestAccountSignIn = async (email: string, password: string) => {
+    setIsSigningIn(true);
+    setAuthError(null);
+    try {
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+      const token = await cred.user.getIdToken();
+      setAuthToken(token);
+      markOnboardingStep('sync');
+      showToast(`Signed in as ${cred.user.email}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Testing account sign-in failed.';
       setAuthError(message);
       showToast(message);
     } finally {
@@ -2859,6 +2883,7 @@ export default function App() {
             isSigningIn={isSigningIn}
             authError={authError}
             onSignIn={handleGoogleSignIn}
+            onTestAccountSignIn={handleTestAccountSignIn}
             onOpenPrototype={() => setPrototypeOpen(true)}
           />
         ) : isSubscriptionLocked ? (

@@ -64,7 +64,7 @@ const TIERS: TierSpec[] = [
     annualUnitPrice: 39,
     unitLabel: 'per door / mo',
     defaultDoors: 4,
-    playChannel: 'Stripe subscription checkout',
+    playChannel: '14-day free trial · payment method required',
     summary: 'Unlimited AI camera audits, revenue swap recommendations, and live market grounding.',
     highlights: [
       'Up to 25 cooler doors per store',
@@ -82,7 +82,7 @@ const TIERS: TierSpec[] = [
     annualUnitPrice: 95,
     unitLabel: 'per store / mo',
     defaultDoors: 20,
-    playChannel: 'Stripe subscription or invoiced contract',
+    playChannel: '14-day free trial · payment method required',
     summary: 'Fleet-wide planogram governance, POS velocity sync, and private Android deployment.',
     highlights: [
       'Unlimited stores & cooler doors',
@@ -331,7 +331,7 @@ export const PricingScreen: React.FC<PricingScreenProps> = ({
                   <div className="text-xs font-mono-tabular text-[var(--kq-accent)] font-medium mt-1.5">
                     {tier.id === 'starter'
                       ? 'Free interactive prototype preview'
-                      : `Estimated total: $${totalMonthly.toLocaleString()}/mo (${storeCount} ${
+                      : `14-day free trial, then $${totalMonthly.toLocaleString()}/mo (${storeCount} ${
                           storeCount === 1 ? 'store' : 'stores'
                         })`}
                   </div>
@@ -392,7 +392,7 @@ export const PricingScreen: React.FC<PricingScreenProps> = ({
                     ) : (
                       <>
                         <CreditCard className="w-4 h-4" />
-                        Pay securely with Stripe
+                        Start 14-day free trial
                       </>
                     )}
                   </button>
@@ -407,7 +407,7 @@ export const PricingScreen: React.FC<PricingScreenProps> = ({
                     }`}
                   >
                     <Sparkles className="w-4 h-4" />
-                    Sign in with Google to Activate
+                    Sign in to start free trial
                   </button>
                 )}
               </div>
